@@ -1,6 +1,7 @@
 #include "stream_diagnostic.h"
 #include "network.h"
 #include "hls.h"
+#include "hls_crypto.h"
 #include "video_pipeline.h"
 #include "video_preview.h"
 #include "aac_audio.h"
@@ -47,6 +48,9 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  if((ui->stream_stage>=1 && ui->stream_stage<=3) || ui->stream_stage==5)return -2;
  close_pipeline();
  ui->stream_paused=0;ui->stream_media_url[0]=0;
+ ui->stream_cipher_method=0;
+ memset(ui->stream_key,0,sizeof(ui->stream_key));
+ ui->stream_key_url[0]=0;ui->stream_segment_url[0]=0;
  ui->stream_last_segment[0]=0;ui->stream_refresh_at=0;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
@@ -75,10 +79,16 @@ static void inspect_playlist(IptvitaUi *ui)
  int rc=iptvita_hls_inspect(text,ui->stream_url,info);
  free(text);
  if(rc<0){free(info);fail(ui,-10);return;}
- if(info->encrypted){free(info);fail(ui,-13);return;}
+ if(info->cipher_method==2){free(info);fail(ui,-23);return;}
  char next[IPTVITA_HLS_URL_MAX];
  snprintf(next,sizeof(next),"%s",info->first_media);
  int master=info->is_master;
+ int cipher=info->cipher_method;
+ if(!master) {
+  ui->stream_cipher_method=cipher;
+  memcpy(ui->stream_iv,info->iv,16);
+  snprintf(ui->stream_key_url,sizeof(ui->stream_key_url),"%s",info->key_url);
+ }
  free(info);
  if(!next[0]){fail(ui,-14);return;}
  int stage=master?2:3;
@@ -92,7 +102,28 @@ static void inspect_playlist(IptvitaUi *ui)
    return;
   }
  }
- rc=schedule(ui,next,stage);
+ if(!master && cipher==1) {
+  if(!ui->stream_key_url[0]){fail(ui,-24);return;}
+  snprintf(ui->stream_segment_url,sizeof(ui->stream_segment_url),"%s",next);
+  rc=schedule(ui,ui->stream_key_url,6);
+ }else rc=schedule(ui,next,stage);
+ if(rc<0)fail(ui,rc);
+}
+static void inspect_key(IptvitaUi *ui)
+{
+ SceUID fd=sceIoOpen(iptvita_network_cache_path(),SCE_O_RDONLY,0);
+ if(fd<0){fail(ui,-25);return;}
+ SceOff size=sceIoLseek(fd,0,SCE_SEEK_END);
+ if(size!=16 || sceIoLseek(fd,0,SCE_SEEK_SET)<0) {
+  sceIoClose(fd);fail(ui,-25);return;
+ }
+ unsigned char key[16];
+ int n=sceIoRead(fd,key,16);
+ sceIoClose(fd);
+ if(n!=16){fail(ui,-25);return;}
+ memcpy(ui->stream_key,key,16);
+ memset(key,0,16);
+ int rc=schedule(ui,ui->stream_segment_url,3);
  if(rc<0)fail(ui,rc);
 }
 static void inspect_ts(IptvitaUi *ui)
@@ -105,13 +136,33 @@ static void inspect_ts(IptvitaUi *ui)
   }
   pipeline_open=1;
  }
- unsigned char chunk[188*64];
  int bytes=0;
- while((bytes=sceIoRead(fd,chunk,sizeof(chunk)))>0) {
-  if(bytes%188) {fail(ui,-16);break;}
-  if(iptvita_video_feed(&pipeline,chunk,(size_t)bytes)<0){fail(ui,-17);break;}
+ if(ui->stream_cipher_method==1) {
+  SceOff size=sceIoLseek(fd,0,SCE_SEEK_END);
+  if(size<=0 || size>4*1024*1024 || sceIoLseek(fd,0,SCE_SEEK_SET)<0) {
+   fail(ui,-26);
+  }else {
+   unsigned char *segment=(unsigned char*)malloc((size_t)size);
+   if(!segment){fail(ui,-26);}
+   else {
+    int n=sceIoRead(fd,segment,(unsigned int)size);
+    if(n!=(int)size)fail(ui,-26);
+    else {
+     int plain=iptvita_hls_decrypt(segment,(size_t)n,ui->stream_key,ui->stream_iv);
+     if(plain<=0 || plain%188)fail(ui,-27);
+     else if(iptvita_video_feed(&pipeline,segment,(size_t)plain)<0)fail(ui,-17);
+    }
+    free(segment);
+   }
+  }
+ }else {
+  unsigned char chunk[188*64];
+  while((bytes=sceIoRead(fd,chunk,sizeof(chunk)))>0) {
+   if(bytes%188) {fail(ui,-16);break;}
+   if(iptvita_video_feed(&pipeline,chunk,(size_t)bytes)<0){fail(ui,-17);break;}
+  }
+  if(bytes<0 && ui->stream_stage==3)fail(ui,-15);
  }
- if(bytes<0 && ui->stream_stage==3)fail(ui,-15);
  if(ui->stream_stage==3 && pipeline.video_pid>=0) {
   if(pipeline.audio_pid>=0)iptvita_pes_flush(&pipeline.audio_pes);
   iptvita_pes_flush(&pipeline.video_pes);
@@ -144,7 +195,7 @@ void iptvita_stream_poll(IptvitaUi *ui)
   }
   return;
  }
- if(ui->stream_stage<1 || ui->stream_stage>3)return;
+ if(ui->stream_stage<1 || (ui->stream_stage>3 && ui->stream_stage!=6))return;
  int net=iptvita_network_state();
  if(net==1 || net==0)return;
  int err=iptvita_network_error_code();
@@ -158,6 +209,7 @@ void iptvita_stream_poll(IptvitaUi *ui)
   return;
  }
  if(ui->stream_stage==3)inspect_ts(ui);
+ else if(ui->stream_stage==6)inspect_key(ui);
  else inspect_playlist(ui);
 }
 
