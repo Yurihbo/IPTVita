@@ -29,6 +29,10 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
  out->is_hls=1;
  int expect_variant=0;
  int pending_height=0,chosen_height=0,compatible=0;
+ int method=0,has_iv=0;
+ unsigned char current_iv[16]={0};
+ char current_key[IPTVITA_HLS_URL_MAX]={0};
+ unsigned long long sequence=0;
  while(*p) {
   const char *e=strchr(p,'\n');
   if(!e)e=p+strlen(p);
@@ -45,7 +49,49 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
     if(sscanf(res+11,"%dx%d",&w,&h)==2 && w>0 && h>0)pending_height=h;
    }
   }
-  else if(n>=11 && !strncmp(s,"#EXT-X-KEY:",11))out->encrypted=1;
+  else if(n>=22 && !strncmp(s,"#EXT-X-MEDIA-SEQUENCE:",22)) {
+   unsigned long long value=0;
+   if(sscanf(s+22,"%llu",&value)==1)sequence=value;
+  }
+  else if(n>=11 && !strncmp(s,"#EXT-X-KEY:",11)) {
+   char line[IPTVITA_HLS_URL_MAX];
+   if(n>=sizeof(line))return -3;
+   memcpy(line,s,n);line[n]=0;
+   const char *m=strstr(line,"METHOD=");
+   method=2;
+   if(m) {
+    m+=7;
+    if(!strncmp(m,"NONE",4) && (m[4]==',' || !m[4]))method=0;
+    else if(!strncmp(m,"AES-128",7) && (m[7]==',' || !m[7]))method=1;
+   }
+   current_key[0]=0;has_iv=0;memset(current_iv,0,16);
+   if(method==1) {
+    const char *key=strstr(line,"URI=\"");
+    if(key) {
+     key+=5;const char *end=strchr(key,'"');
+     if(!end || (size_t)(end-key)>=sizeof(line))return -3;
+     char ref[IPTVITA_HLS_URL_MAX];
+     size_t count=(size_t)(end-key);
+     memcpy(ref,key,count);ref[count]=0;
+     if(resolve(base,ref,current_key,sizeof(current_key))<0)return -3;
+    }
+    const char *iv=strstr(line,"IV=0x");
+    if(iv) {
+     iv+=5;has_iv=1;
+     for(int i=0;i<16;i++) {
+      unsigned value=0;
+      for(int j=0;j<2;j++) {
+       char c=iv[2*i+j];
+       int d=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:-1;
+       if(d<0){method=2;has_iv=0;break;}
+       value=value*16+(unsigned)d;
+      }
+      if(method!=1)break;
+      current_iv[i]=(unsigned char)value;
+     }
+    }
+   }
+  }
   else if(n && *s!='#') {
    char ref[IPTVITA_HLS_URL_MAX];
    if(n>=sizeof(ref))return -3;
@@ -62,8 +108,21 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
      compatible=is_ok;
     }
    } else {
+    unsigned long long segment_number=sequence+(unsigned long long)out->segments;
     ++out->segments;
     if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
+    out->cipher_method=method;
+    out->encrypted=method!=0;
+    out->iv_explicit=has_iv;
+    memcpy(out->iv,current_iv,16);
+    if(method==1 && !has_iv) {
+     for(int byte=15;byte>=8;byte--) {
+      out->iv[byte]=(unsigned char)(segment_number&255);
+      segment_number>>=8;
+     }
+    }
+    out->media_sequence=sequence+(unsigned long long)(out->segments-1);
+    snprintf(out->key_url,sizeof(out->key_url),"%s",current_key);
    }
   }
   p=*e?e+1:e;
