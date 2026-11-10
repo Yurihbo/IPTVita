@@ -28,6 +28,7 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
  if(strncmp(p,"#EXTM3U",7)!=0)return -2;
  out->is_hls=1;
  int expect_variant=0;
+ int pending_height=0,chosen_height=0,compatible=0;
  while(*p) {
   const char *e=strchr(p,'\n');
   if(!e)e=p+strlen(p);
@@ -35,17 +36,35 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
   while(s<e && isspace((unsigned char)*s))++s;
   while(e>s && isspace((unsigned char)e[-1]))--e;
   size_t n=(size_t)(e-s);
-  if(n>=18 && !strncmp(s,"#EXT-X-STREAM-INF:",18)) {out->is_master=1;expect_variant=1;}
+  if(n>=18 && !strncmp(s,"#EXT-X-STREAM-INF:",18)) {
+   out->is_master=1;expect_variant=1;
+   pending_height=0;
+   const char *res=strstr(s,"RESOLUTION=");
+   if(res && res<e) {
+    int w=0,h=0;
+    if(sscanf(res+11,"%dx%d",&w,&h)==2 && w>0 && h>0)pending_height=h;
+   }
+  }
   else if(n>=11 && !strncmp(s,"#EXT-X-KEY:",11))out->encrypted=1;
   else if(n && *s!='#') {
    char ref[IPTVITA_HLS_URL_MAX];
    if(n>=sizeof(ref))return -3;
    size_t k=n;
    memcpy(ref,s,k);ref[k]=0;
-   if((out->is_master ? !out->first_media[0] : 1) &&
-      resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
-   if(expect_variant){++out->variants;expect_variant=0;}
-   else ++out->segments;
+   if(expect_variant) {
+    ++out->variants;expect_variant=0;
+    int is_ok=pending_height>0 && pending_height<=720;
+    int select= !out->first_media[0] ||
+      (is_ok && (!compatible || pending_height>chosen_height));
+    if(select) {
+     if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
+     chosen_height=pending_height;
+     compatible=is_ok;
+    }
+   } else {
+    ++out->segments;
+    if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
+   }
   }
   p=*e?e+1:e;
  }
