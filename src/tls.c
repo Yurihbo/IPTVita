@@ -59,14 +59,15 @@ int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
  mbedtls_ssl_init(&ssl);mbedtls_ssl_config_init(&conf);
  mbedtls_entropy_init(&entropy);mbedtls_ctr_drbg_init(&rng);mbedtls_x509_crt_init(&cert);
  const unsigned char seed[]="IPTVita HTTPS";
- if(mbedtls_ctr_drbg_seed(&rng,mbedtls_entropy_func,&entropy,seed,sizeof(seed)-1)!=0)goto done;
+ if(mbedtls_ctr_drbg_seed(&rng,mbedtls_entropy_func,&entropy,seed,sizeof(seed)-1)!=0){result=-31;goto done;}
  /* PEM certificate buffer must include its trailing NUL. */
- if(mbedtls_x509_crt_parse(&cert,ca,ca_len)!=0)goto done;
- if(mbedtls_ssl_config_defaults(&conf,MBEDTLS_SSL_IS_CLIENT,MBEDTLS_SSL_TRANSPORT_STREAM,MBEDTLS_SSL_PRESET_DEFAULT)!=0)goto done;
+ if(mbedtls_x509_crt_parse(&cert,ca,ca_len)!=0){result=-32;goto done;}
+ if(mbedtls_ssl_config_defaults(&conf,MBEDTLS_SSL_IS_CLIENT,MBEDTLS_SSL_TRANSPORT_STREAM,MBEDTLS_SSL_PRESET_DEFAULT)!=0){result=-33;goto done;}
  mbedtls_ssl_conf_authmode(&conf,MBEDTLS_SSL_VERIFY_REQUIRED);
  mbedtls_ssl_conf_ca_chain(&conf,&cert,NULL);
  mbedtls_ssl_conf_rng(&conf,mbedtls_ctr_drbg_random,&rng);
- if(mbedtls_ssl_setup(&ssl,&conf)!=0 || mbedtls_ssl_set_hostname(&ssl,domain)!=0)goto done;
+ if(mbedtls_ssl_setup(&ssl,&conf)!=0){result=-34;goto done;}
+ if(mbedtls_ssl_set_hostname(&ssl,domain)!=0){result=-35;goto done;}
  fd=dial(domain);if(fd<0){result=-4;goto done;}
  VitaSocket sock={fd};mbedtls_ssl_set_bio(&ssl,&sock,send_cb,recv_cb,NULL);
  int rc;
