@@ -28,6 +28,7 @@ typedef struct {
     int list_mode;
     int browsing;
     int channel_index;
+    int channel_details;
     int source_index;
     IptvitaPlaylist playlist;
     int list_index;
