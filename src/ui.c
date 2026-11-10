@@ -3,6 +3,7 @@
 #include "video_preview.h"
 #include "aac_audio.h"
 #include <vita2d.h>
+#include <psp2/kernel/processmgr.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -446,7 +447,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
     if(ui->browsing && ui->channel_details) {
         vita2d_clear_screen();
         rect(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,RGBA8(0,0,0,255));
-        if(ui->stream_decoded_frames) iptvita_preview_draw(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT);
+        if(ui->stream_decoded_frames) iptvita_preview_draw(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,ui->stream_fill_screen);
         else if(!ui->stream_info_visible) {
             if(ui->stream_decode_error)
                 label(295,267,tr(ui,"VIDEO INDISPONIVEL - APERTE R1","VIDEO UNAVAILABLE - PRESS R1"),2,p.accent);
@@ -454,6 +455,30 @@ void iptvita_ui_render(const IptvitaUi *ui)
                 label(305,267,tr(ui,"FALHA NO CANAL - APERTE R1","CHANNEL ERROR - PRESS R1"),2,p.accent);
             else
                 label(395,270,tr(ui,"CARREGANDO CANAL...","LOADING CHANNEL..."),2,p.muted);
+        }
+        /* Show unobtrusive, measured buffer occupancy on initial tune-in or
+         * when video output stops advancing, even with the R1 HUD hidden. */
+        if(!ui->stream_paused && ui->stream_stage>0) {
+            IptvitaPreviewStats video=iptvita_preview_stats();
+            unsigned long long now=(unsigned long long)sceKernelGetProcessTimeWide();
+            int stalled=video.decoded==0 ||
+                (video.last_output_us && now>video.last_output_us+900000ULL);
+            if(stalled) {
+                IptvitaAudioStats audio=iptvita_audio_stats();
+                int pct=video.buffer_percent;
+                if(audio.played && audio.buffered<48u) {
+                    int apct=(int)(audio.buffered*100u/48u);
+                    if(apct<pct)pct=apct;
+                }
+                if(pct<0)pct=0;
+                if(pct>100)pct=100;
+                rect(12,12,220,50,RGBA8(8,20,33,224));
+                char buffering[50];
+                snprintf(buffering,sizeof(buffering),"BUFFERING %d%%",pct);
+                label(23,22,buffering,2,p.white);
+                rect(23,48,193,5,RGBA8(50,65,80,255));
+                rect(23,48,193*pct/100,5,p.accent);
+            }
         }
         if(ui->stream_info_visible) {
             rect(0,0,IPTVITA_WIDTH,87,RGBA8(8,20,33,224));
@@ -471,7 +496,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
             label(25,485,details,2,p.muted);
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
-                  tr(ui,"X PAUSAR  R1 OCULTAR INFO  O VOLTAR","X PAUSE  R1 HIDE INFO  O BACK"),2,p.accent);
+                  tr(ui,"X PAUSAR  R1 INFO  L1 TELA  O VOLTAR","X PAUSE  R1 INFO  L1 SCREEN  O BACK"),2,p.accent);
         }
         return;
     }
