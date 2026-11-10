@@ -52,6 +52,8 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  memset(ui->stream_key,0,sizeof(ui->stream_key));
  ui->stream_key_url[0]=0;ui->stream_segment_url[0]=0;
  ui->stream_last_segment[0]=0;ui->stream_refresh_at=0;
+ ui->stream_last_sequence=ui->stream_selected_sequence=0;
+ ui->stream_has_sequence=0;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
  ui->stream_decode_error=0;ui->stream_decoded_frames=0;
@@ -76,7 +78,8 @@ static void inspect_playlist(IptvitaUi *ui)
  text[n]=0;
  IptvitaHlsInfo *info=(IptvitaHlsInfo*)malloc(sizeof(*info));
  if(!info){free(text);fail(ui,-12);return;}
- int rc=iptvita_hls_inspect(text,ui->stream_url,info);
+ int rc=iptvita_hls_inspect_next(text,ui->stream_url,info,
+       ui->stream_last_sequence,ui->stream_has_sequence && ui->stream_stage==2);
  free(text);
  if(rc<0){free(info);fail(ui,-10);return;}
  if(info->cipher_method==2){free(info);fail(ui,-23);return;}
@@ -86,11 +89,18 @@ static void inspect_playlist(IptvitaUi *ui)
  int cipher=info->cipher_method;
  if(!master) {
   ui->stream_cipher_method=cipher;
+  ui->stream_selected_sequence=info->media_sequence;
   memcpy(ui->stream_iv,info->iv,16);
   snprintf(ui->stream_key_url,sizeof(ui->stream_key_url),"%s",info->key_url);
  }
  free(info);
- if(!next[0]){fail(ui,-14);return;}
+ if(!next[0]) {
+  if(!master && ui->stream_has_sequence) {
+   ui->stream_stage=5;ui->stream_refresh_at=now_us()+500000ULL;
+   return;
+  }
+  fail(ui,-14);return;
+ }
  int stage=master?2:3;
  if(ui->stream_stage==2 && master){fail(ui,-14);return;}
  if(!master) {
@@ -180,8 +190,10 @@ static void inspect_ts(IptvitaUi *ui)
  if(ui->stream_stage==3) {
   strncpy(ui->stream_last_segment,ui->stream_url,sizeof(ui->stream_last_segment)-1);
   ui->stream_last_segment[sizeof(ui->stream_last_segment)-1]=0;
+  ui->stream_has_sequence=1;
+  ui->stream_last_sequence=ui->stream_selected_sequence;
   ui->stream_stage=5;
-  ui->stream_refresh_at=now_us()+1500000ULL;
+  ui->stream_refresh_at=now_us()+200000ULL;
  }
 }
 void iptvita_stream_poll(IptvitaUi *ui)
@@ -223,5 +235,6 @@ void iptvita_stream_stop(IptvitaUi *ui)
   ui->stream_paused=0;
   ui->stream_media_url[0]=0;
   ui->stream_last_segment[0]=0;
+  ui->stream_has_sequence=0;
  }
 }
