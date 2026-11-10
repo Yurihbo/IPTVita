@@ -46,7 +46,7 @@ int main(void)
                 if(x>=263 && x<912 && y>=273 && y<453) {
                     int col=(x-263)/59, row=(y-273)/36;
                     int index=row*11+col;
-                    if(index>=0 && index<49) {
+                    if(index>=0 && index<48) {
                         ui.keyboard_index=index;
                         ui.grid_keyboard=1;
                         pressed |= SCE_CTRL_CROSS;
