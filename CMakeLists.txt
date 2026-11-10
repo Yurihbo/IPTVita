@@ -32,7 +32,6 @@ target_link_libraries(IPTVita.elf
   SceDisplay_stub
   SceGxm_stub
   SceSysmodule_stub
-  SceKernel_threadmgr_stub
   m
 )
 
