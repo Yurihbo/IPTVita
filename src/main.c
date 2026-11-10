@@ -3,6 +3,7 @@
 #include "keyboard.h"
 #include "network.h"
 #include "stream_diagnostic.h"
+#include "video_preview.h"
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
@@ -78,6 +79,14 @@ int main(void)
             }
         }
         if(ui.browsing && ui.channel_details) iptvita_stream_poll(&ui);
+        if(ui.browsing && ui.channel_details) {
+            if(!ui.stream_paused) iptvita_preview_tick();
+            IptvitaPreviewStats stats=iptvita_preview_stats();
+            ui.stream_decode_error=stats.decode_error;
+            ui.stream_decoded_frames=stats.decoded;
+            ui.stream_video_width=stats.width;
+            ui.stream_video_height=stats.height;
+        }
         vita2d_start_drawing();
         iptvita_ui_render(&ui);
         vita2d_end_drawing();
