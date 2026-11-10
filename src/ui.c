@@ -317,7 +317,7 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         label(265,375,tr(ui,"R1 MOSTRAR / OCULTAR INFO","R1 SHOW / HIDE INFO"),2,p.muted);
         if(ui->stream_info_visible && ui->stream_stage) {
             char line[120];
-            snprintf(line,sizeof(line),"HLS ETAPA %d  STATUS %d",ui->stream_stage,ui->stream_status);
+            snprintf(line,sizeof(line),"HLS ETAPA %d  STATUS %d  %s",ui->stream_stage,ui->stream_status,ui->stream_stage==-23?"DRM NAO SUPORTADO":ui->stream_cipher_method==1?"AES-128":"");
             label(265,388,line,2,p.white);
             snprintf(line,sizeof(line),"TS %u  NAL %u  AU %u  PID %d",ui->stream_packets,ui->stream_nals,ui->stream_frames,ui->stream_video_pid);
             label(265,417,line,2,p.accent);
