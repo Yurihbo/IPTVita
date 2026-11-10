@@ -88,6 +88,8 @@ int iptvita_handle_input(IptvitaUi *ui, unsigned int pressed)
         } else if (ui->page == IPTVITA_SETTINGS) {
             if (ui->settings_index == 0) {
                 ui->theme = (ui->theme + 1) % 3;
+            } else if (ui->settings_index == 2) {
+                ui->language = 1 - ui->language;
             } else {
                 ui->show_dialog = 1;
             }
