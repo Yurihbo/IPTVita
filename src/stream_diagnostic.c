@@ -330,6 +330,8 @@ static void inspect_ts(IptvitaUi *ui)
   ui->stream_last_segment[sizeof(ui->stream_last_segment)-1]=0;
   ui->stream_has_sequence=1;
   ui->stream_last_sequence=ui->stream_selected_sequence;
+  if(ui->stream_audio_pid<0 && ui->stream_alt_audio_list_url[0])
+   ui->stream_alt_audio_pending=1;
   ui->stream_stage=5;
   ui->stream_refresh_at=now_us()+200000ULL;
  }
@@ -347,12 +349,18 @@ void iptvita_stream_poll(IptvitaUi *ui)
   }
   if(!ui->stream_paused && ui->stream_media_url[0] &&
      now_us()>=ui->stream_refresh_at) {
-   int rc=schedule(ui,ui->stream_media_url,2);
+   int rc;
+   if(ui->stream_alt_audio_pending && ui->stream_alt_audio_list_url[0]) {
+    ui->stream_alt_audio_pending=0;
+    rc=schedule(ui,ui->stream_alt_audio_list_url,7);
+   }else rc=schedule(ui,ui->stream_media_url,2);
    if(rc<0)fail(ui,rc);
   }
   return;
  }
- if(ui->stream_stage<1 || (ui->stream_stage>3 && ui->stream_stage!=6))return;
+ if(ui->stream_stage<1 || (ui->stream_stage>3 &&
+   ui->stream_stage!=6 && ui->stream_stage!=7 &&
+   ui->stream_stage!=8 && ui->stream_stage!=9))return;
  int net=iptvita_network_state();
  if(net==1 || net==0)return;
  int err=iptvita_network_error_code();
@@ -366,7 +374,8 @@ void iptvita_stream_poll(IptvitaUi *ui)
   return;
  }
  if(ui->stream_stage==3)inspect_ts(ui);
- else if(ui->stream_stage==6)inspect_key(ui);
+ else if(ui->stream_stage==8)inspect_alt_audio(ui);
+ else if(ui->stream_stage==6 || ui->stream_stage==9)inspect_key(ui);
  else inspect_playlist(ui);
 }
 
@@ -384,5 +393,10 @@ void iptvita_stream_stop(IptvitaUi *ui)
   memset(ui->stream_key,0,sizeof(ui->stream_key));
   ui->stream_cached_key_url[0]=0;
   ui->stream_has_sequence=0;
+  ui->stream_alt_audio_has_sequence=0;
+  ui->stream_alt_audio_pending=0;
+  ui->stream_alt_audio_list_url[0]=0;
+  ui->stream_alt_audio_key_valid=0;
+  memset(ui->stream_alt_audio_key,0,16);
  }
 }
