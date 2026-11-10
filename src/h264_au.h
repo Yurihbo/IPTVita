@@ -9,6 +9,8 @@ typedef struct {
  size_t used;
  unsigned char *pending;
  size_t pending_used,pending_capacity;
+ uint64_t pending_pts;
+ int pending_has_pts;
  int has_vcl,has_idr,has_pts;
  uint64_t pts;
  unsigned units,frames,dropped;
