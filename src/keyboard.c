@@ -3,11 +3,12 @@
 #include <psp2/sysmodule.h>
 #include <string.h>
 #include <stdint.h>
+#include "sources.h"
 
 static SceWChar16 input[2049];
 static SceWChar16 initial[2049];
 static unsigned char work[SCE_IME_WORK_BUFFER_SIZE] __attribute__((aligned(64)));
-static char backup[4096];
+static char backup[IPTVITA_URL_MAX];
 static char *target;
 static size_t target_cap;
 static volatile int finished, accepted, active;
@@ -76,7 +77,7 @@ int iptvita_keyboard_begin(char *text,size_t capacity,int is_url,int is_password
     param.initialText=initial;
     param.inputTextBuffer=input;
     /* Limit IME text to a modest working size on the Vita. The source field
-       itself still supports 4095-byte URLs through the fallback editor. */
+       itself still supports 8191-byte URLs through the fallback editor. */
     param.maxTextLength=capacity-1<512?(unsigned int)(capacity-1):512;
     /* URL mode can trigger instability on some Vita system keyboards.
        BASIC_LATIN supports URL punctuation without the URL-mode handler. */
@@ -101,7 +102,7 @@ int iptvita_keyboard_tick(void)
     if(!finished && sceImeUpdate()<0) { finished=1; accepted=0; }
     /* Reflect every keystroke in the app while the keyboard is visible. */
     if(!finished) {
-        char temp[4096];
+        char temp[IPTVITA_URL_MAX];
         if(from_utf16(temp,target_cap,input)==0)
             strcpy(target,temp);
         return 1;
