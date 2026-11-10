@@ -179,11 +179,10 @@ static void inspect_ts(IptvitaUi *ui)
   }
   if(bytes<0 && ui->stream_stage==3)fail(ui,-15);
  }
- if(ui->stream_stage==3 && pipeline.video_pid>=0) {
-  if(pipeline.audio_pid>=0)iptvita_pes_flush(&pipeline.audio_pes);
-  iptvita_pes_flush(&pipeline.video_pes);
-  iptvita_h264_au_flush(&pipeline.video_au);
- }
+ /* Do not flush PES/AU at an HLS segment boundary. Audio and H264
+  * packets can straddle adjacent transport segments; forced flush generated
+  * truncated pictures and repeatedly restarted the sound. The next PES
+  * start packet releases the previous completed payload naturally. */
  ui->stream_packets=pipeline.transport.packets;
  ui->stream_nals=pipeline.transport.h264_nal_units;
  ui->stream_video_pid=pipeline.transport.video_pid;
