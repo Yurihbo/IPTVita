@@ -13,7 +13,7 @@ int main(void)
     unsigned int previous = 0;
     int quit = 0;
 
-    sceCtrlSetSamplingMode(PSP2_CTRL_MODE_DIGITAL);
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
     vita2d_init();
 
     while (!quit) {
