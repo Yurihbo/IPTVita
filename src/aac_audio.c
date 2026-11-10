@@ -6,13 +6,15 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define FIFO 80
+#define FIFO 256
+#define PREBUFFER 48
 #define MAX_ADTS 8192
 static const int rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
 typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];} Frame;
 static Frame fifo[FIFO];
 static unsigned head,tail,count;
 static volatile int running,paused;
+static int primed;
 static SceUID mutex=-1,thread=-1;
 static IptvitaAudioStats stats;
 static SceAudiodecCtrl codec;
@@ -81,9 +83,11 @@ static int worker(SceSize args,void *argp)
  while(running) {
   int got=0;
   lock();
-  if(count && !paused && cur) {
+  if(!paused && count>=PREBUFFER)primed=1;
+  if(primed && count && !paused && cur) {
    *cur=fifo[head];head=(head+1)%FIFO;count--;got=1;
   }
+  if(!count)primed=0;
   unlock();
   if(!got){sceKernelDelayThread(5000);continue;}
   if(cur->len<7)continue;
@@ -117,7 +121,7 @@ int iptvita_audio_start(void)
 {
  if(running)return 0;
  memset(&stats,0,sizeof stats);
- count=head=tail=0;carry_len=0;paused=0;
+ count=head=tail=0;carry_len=0;paused=0;primed=0;
  mutex=sceKernelCreateMutex("iptvita_audio_lock",0,0,NULL);
  if(mutex<0)return -1;
  running=1;
@@ -162,5 +166,5 @@ void iptvita_audio_stop(void)
  running=0;
  if(thread>=0){sceKernelWaitThreadEnd(thread,NULL,NULL);thread=-1;}
  if(mutex>=0){sceKernelDeleteMutex(mutex);mutex=-1;}
- count=head=tail=0;carry_len=0;
+ count=head=tail=0;carry_len=0;primed=0;
 }
