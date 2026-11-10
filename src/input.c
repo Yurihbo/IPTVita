@@ -53,7 +53,7 @@ static void finish_edit(IptvitaUi *ui)
 static void editor_input(IptvitaUi *ui,unsigned int pressed)
 {
     if(pressed&SCE_CTRL_CIRCLE) { ui->editing=0; ui->save_status=0; return; }
-    if(pressed&SCE_CTRL_SQUARE) { finish_edit(ui); return; }
+    if(pressed&SCE_CTRL_TRIANGLE) { finish_edit(ui); return; }
     int fields=ui->draft.type==1 ? 4 : 2;
     if(pressed&SCE_CTRL_LTRIGGER) ui->edit_field=(ui->edit_field+fields-1)%fields;
     if(pressed&SCE_CTRL_RTRIGGER) ui->edit_field=(ui->edit_field+1)%fields;
@@ -64,7 +64,7 @@ static void editor_input(IptvitaUi *ui,unsigned int pressed)
     size_t cap=0;
     char *dst=field(ui,&cap);
     size_t n=strlen(dst);
-    if((pressed&SCE_CTRL_TRIANGLE) && n) dst[n-1]=0;
+    if((pressed&SCE_CTRL_SQUARE) && n) dst[n-1]=0;
     if((pressed&SCE_CTRL_CROSS) && n+1<cap) {
         dst[n]=keys[ui->keyboard_index];
         dst[n+1]=0;
@@ -95,7 +95,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         if(pressed&SCE_CTRL_DOWN && ui->list_index+1<(int)ui->sources.count) ++ui->list_index;
         if((pressed&SCE_CTRL_CROSS) && ui->sources.count)
             begin_edit(ui,ui->list_index,0);
-        if((pressed&SCE_CTRL_TRIANGLE) && ui->sources.count) {
+        if((pressed&SCE_CTRL_SQUARE) && ui->sources.count) {
             iptvita_sources_remove(&ui->sources,(unsigned int)ui->list_index);
             ui->save_status=iptvita_sources_save(&ui->sources)<0?4:1;
             if(ui->list_index>=(int)ui->sources.count && ui->list_index>0) --ui->list_index;
