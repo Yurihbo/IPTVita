@@ -443,10 +443,11 @@ static void dialog(const IptvitaUi *ui, Palette p)
 void iptvita_ui_render(const IptvitaUi *ui)
 {
     Palette p=palette(ui->theme);
-    if(ui->browsing && ui->channel_details && ui->stream_decoded_frames>0) {
+    if(ui->browsing && ui->channel_details) {
         vita2d_clear_screen();
         rect(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,RGBA8(0,0,0,255));
-        iptvita_preview_draw(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT);
+        if(ui->stream_decoded_frames) iptvita_preview_draw(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT);
+        else if(!ui->stream_info_visible) label(395,270,tr(ui,"CARREGANDO CANAL...","LOADING CHANNEL..."),2,p.muted);
         if(ui->stream_info_visible) {
             rect(0,0,IPTVITA_WIDTH,87,RGBA8(8,20,33,224));
             const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
@@ -456,7 +457,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
             label(26,56,details,2,p.accent);
             rect(0,445,IPTVITA_WIDTH,99,RGBA8(8,20,33,224));
             IptvitaAudioStats audio=iptvita_audio_stats();
-            snprintf(details,sizeof(details),"HTTP %d / VIDEO %d / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_decode_error,audio.played,audio.error);
+            snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
             label(25,463,details,2,p.white);
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
