@@ -18,6 +18,7 @@ set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(iptvita_mbedtls GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git GIT_TAG v3.6.4 GIT_SHALLOW TRUE GIT_SUBMODULES_RECURSE TRUE)
 FetchContent_MakeAvailable(iptvita_mbedtls)
+target_compile_definitions(mbedcrypto PRIVATE MBEDTLS_NO_PLATFORM_ENTROPY MBEDTLS_ENTROPY_HARDWARE_ALT)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
@@ -38,6 +39,7 @@ add_executable(IPTVita.elf
   src/player.c
   src/hls.c
   src/tls.c
+  src/vita_entropy.c
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
@@ -64,6 +66,7 @@ target_link_libraries(IPTVita.elf
   SceDisplay_stub
   SceGxm_stub
   SceSysmodule_stub
+  SceKernelThreadMgr_stub
   SceCommonDialog_stub
   ${VITA_EXTRA_STUBS}
   ${CURL_LIBRARIES}
