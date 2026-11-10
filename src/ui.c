@@ -146,16 +146,16 @@ static void sidebar(const IptvitaUi *ui, Palette p)
         rect(14,y,194,52,active?p.selected:p.sidebar);
         if(active) rect(14,y,4,52,p.accent);
         if(!ui->focus_content && ui->nav_index==i) stroke(14,y,194,52,p.accent);
-        label(36,y+17,pages[i],3,active?p.white:p.muted);
+        label(36,y+19,pages[i],2,active?p.white:p.muted);
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.3",2,p.muted);
+    label(24,511,"IPTVITA  V0.3.1",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
     (void)page;
-    label(252,31,title,5,p.white);
+    label(252,31,title,4,p.white);
     label(254,73,hint,2,p.muted);
     rect(251,106,677,2,p.surface);
 }
@@ -200,7 +200,7 @@ static void editor(const IptvitaUi *ui, Palette p)
     heading(ui->page,p,tr(ui,"EDITAR FONTE","EDIT SOURCE"),
             tr(ui,"TECLADO PELO CONTROLE","CONTROLLER KEYBOARD"));
     rect(252,130,672,122,p.surface);
-    label(271,146,names[ui->edit_field],3,p.accent);
+    label(271,146,names[ui->edit_field],2,p.accent);
     label(271,190,tr(ui,"CARACTERES","CHARACTERS"),2,p.muted);
     char count[24]; snprintf(count,sizeof(count),"%d",n);
     label(424,190,count,2,p.muted);
@@ -214,19 +214,19 @@ static void editor(const IptvitaUi *ui, Palette p)
         rect(x,y,49,30,active?p.selected:p.raised);
         if(active)stroke(x,y,49,30,p.accent);
         char key[2]={keyboard[i],0};
-        label(x+15,y+7,key,3,active?p.white:p.muted);
+        label(x+17,y+8,key,2,active?p.white:p.muted);
     }
-    label(253,473,tr(ui,"X DIGITAR  /  TRI APAGAR  /  L/R CAMPO",
-                          "X TYPE  /  TRI DELETE  /  L/R FIELD"),2,p.muted);
-    label(253,503,tr(ui,"QUADRADO SALVAR  /  O CANCELAR",
-                          "SQUARE SAVE  /  O CANCEL"),2,p.accent);
+    label(253,473,tr(ui,"X DIGITAR  /  QUAD APAGAR  /  L/R CAMPO",
+                          "X TYPE  /  SQUARE DELETE  /  L/R FIELD"),2,p.muted);
+    label(253,503,tr(ui,"TRI SALVAR  /  O CANCELAR  /  TOUCH TECLADO",
+                          "TRI SAVE  /  O CANCEL  /  TOUCH KEYS"),2,p.accent);
     if(ui->save_status==2) label(605,146,tr(ui,"NOME E URL OBRIGATORIOS","NAME AND URL REQUIRED"),2,p.accent);
 }
 static void saved_sources(const IptvitaUi *ui, Palette p)
 {
     heading(ui->page,p,tr(ui,"FONTES SALVAS","SAVED SOURCES"),
-            tr(ui,"X EDITAR  /  TRI EXCLUIR  /  SELECT ADICIONAR",
-                          "X EDIT  /  TRI DELETE  /  SELECT ADD"));
+            tr(ui,"X EDITAR  /  QUAD EXCLUIR  /  SELECT ADICIONAR",
+                          "X EDIT  /  SQUARE DELETE  /  SELECT ADD"));
     if(!ui->sources.count)
         label(267,164,tr(ui,"NENHUMA FONTE SALVA","NO SOURCES SAVED"),3,p.muted);
     unsigned int offset=ui->list_index>=7 ? (unsigned int)(ui->list_index-6) : 0;
@@ -263,7 +263,7 @@ static void sources(const IptvitaUi *ui, Palette p)
         if(active)stroke(x,y,326,135,p.accent);
         rect(x+15,y+17,40,37,p.raised);
         label(x+27,y+30,i==0?"M":i==1?"X":i==2?"D":"F",3,p.accent);
-        label(x+18,y+69,names[i],3,p.white);
+        label(x+18,y+72,names[i],2,p.white);
         label(x+18,y+105,details[i],2,p.muted);
     }
     label(252,476,tr(ui,"X ADICIONAR  /  SELECT LISTA SALVA  /  O VOLTAR","X ADD  /  SELECT SAVED LIST  /  O BACK"),2,p.muted);
@@ -304,7 +304,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.3.0 / FONTES","VERSION 0.3.0 / SOURCES"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.3.1 / FONTES","VERSION 0.3.1 / SOURCES"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
