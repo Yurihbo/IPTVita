@@ -38,6 +38,9 @@ typedef struct {
     int stream_net_error;
     unsigned stream_packets,stream_nals,stream_frames;
     int stream_video_pid;
+    int stream_decode_error;
+    unsigned stream_decoded_frames;
+    int stream_video_width,stream_video_height;
     char stream_url[8192];
     int source_index;
     IptvitaPlaylist playlist;
