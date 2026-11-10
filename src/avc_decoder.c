@@ -108,8 +108,8 @@ static int open_attempt(IptvitaAvcDecoder *d,int width,int height,int references
   void *picbase=NULL;
   ret=sceKernelGetMemBlockBase(uid,&picbase);
   if(ret<0){sceKernelFreeMemBlock(uid);goto error;}
-  got=sceGxmMapMemory(picbase,picbytes,SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE);
-  if(got<0){sceKernelFreeMemBlock(uid);ret=got;goto error;}
+  int map_rc=sceGxmMapMemory(picbase,picbytes,SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE);
+  if(map_rc<0){sceKernelFreeMemBlock(uid);ret=map_rc;goto error;}
   d->picture_uid[i]=uid;
   d->picture_data[i]=(unsigned char*)picbase;
   d->picture_mapped[i]=1;
