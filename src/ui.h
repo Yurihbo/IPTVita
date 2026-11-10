@@ -5,6 +5,7 @@
 #define IPTVITA_HEIGHT 544
 #define IPTVITA_NAV_COUNT 4
 #define IPTVITA_SOURCE_COUNT 4
+#include "sources.h"
 
 typedef enum {
     IPTVITA_HOME = 0,
@@ -23,6 +24,15 @@ typedef struct {
     int language; /* 0 = pt-BR (default), 1 = English */
     int show_dialog;
     int quit_confirm;
+    int list_mode;
+    int list_index;
+    int editing;
+    int edit_index;
+    int edit_field;
+    int keyboard_index;
+    int save_status;
+    IptvitaSource draft;
+    IptvitaSources sources;
 } IptvitaUi;
 
 void iptvita_ui_render(const IptvitaUi *ui);
