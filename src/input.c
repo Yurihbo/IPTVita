@@ -102,6 +102,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         if(ui->channel_details) {
             if((pressed&SCE_CTRL_CROSS) && ui->stream_stage>=1 && ui->stream_stage<=6) {ui->stream_paused=!ui->stream_paused;iptvita_audio_pause(ui->stream_paused);}
             if(pressed&SCE_CTRL_RTRIGGER) ui->stream_info_visible=!ui->stream_info_visible;
+            if(pressed&SCE_CTRL_LTRIGGER) ui->stream_fill_screen=!ui->stream_fill_screen;
             if((pressed&SCE_CTRL_TRIANGLE) && ui->playlist.count>0)
                 {ui->player_probe_target=0;
                 ui->player_probe_result=0;
@@ -119,6 +120,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         if((pressed&SCE_CTRL_CROSS) && ui->playlist.count>0) {
             ui->channel_details=1;
             ui->stream_info_visible=0;
+            ui->stream_fill_screen=1;
             ui->player_probe_result=0;
             ui->player_probe_target=0;
             ui->stream_stage=0;
