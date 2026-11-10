@@ -95,8 +95,16 @@ static void rect(int x, int y, int w, int h, unsigned int color)
 {
     vita2d_draw_rectangle(x, y, w, h, color);
 }
+static vita2d_pgf *system_font;
+void iptvita_ui_font_init(void) { system_font=vita2d_load_default_pgf(); }
+void iptvita_ui_font_fini(void) { if(system_font) { vita2d_free_pgf(system_font); system_font=NULL; } }
 static void label(int x, int y, const char *s, int scale, unsigned int color)
 {
+    if(system_font) {
+        float size=scale==1?0.55f:scale==2?0.75f:scale==3?1.00f:scale==4?1.30f:scale==5?1.55f:2.05f;
+        vita2d_pgf_draw_text(system_font,x,y+(int)(15.0f*size),color,size,s);
+        return;
+    }
     while (*s) {
         char ch = *s++;
         if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
@@ -213,13 +221,15 @@ static void editor(const IptvitaUi *ui, Palette p)
         int active=i==ui->keyboard_index && ui->grid_keyboard;
         rect(x,y,49,30,active?p.selected:p.raised);
         if(active)stroke(x,y,49,30,p.accent);
-        char key[2]={keyboard[i],0};
+        char ch=keyboard[i];
+        if(ui->keyboard_upper && ch>='a' && ch<='z') ch=(char)(ch-'a'+'A');
+        char key[2]={ch,0};
         label(x+17,y+8,key,2,active?p.white:p.muted);
     }
     label(253,473,ui->grid_keyboard ? tr(ui,"X LETRA  /  QUAD APAGAR  /  L/R CAMPO","X LETTER  /  SQUARE ERASE  /  L/R FIELD") :
                  tr(ui,"X TECLADO VITA  /  L/R CAMPO  /  SELECT GRADE","X VITA KEYBOARD  /  L/R FIELD  /  SELECT GRID"),2,p.muted);
-    label(253,503,tr(ui,"TRI SALVAR  /  O CANCELAR  /  TOUCH LETRAS",
-                          "TRI SAVE  /  O CANCEL  /  TOUCH LETTERS"),2,p.accent);
+    label(253,503,tr(ui,"START MAIUSC/MINUSC  /  TRI SALVAR  /  O VOLTAR",
+                          "START UPPER/LOWER  /  TRI SAVE  /  O BACK"),2,p.accent);
     if(ui->save_status==2) label(605,146,tr(ui,"NOME E URL OBRIGATORIOS","NAME AND URL REQUIRED"),2,p.accent);
 }
 static void channel_browser(const IptvitaUi *ui, Palette p)
