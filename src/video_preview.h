@@ -9,5 +9,7 @@ typedef struct {
 void iptvita_preview_reset(void);
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
 IptvitaPreviewStats iptvita_preview_stats(void);
+/* Consume at most one compressed access unit per video tick. */
+void iptvita_preview_tick(void);
 void iptvita_preview_draw(int x,int y,int width,int height);
 #endif
