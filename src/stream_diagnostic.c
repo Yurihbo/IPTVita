@@ -156,7 +156,7 @@ static void inspect_ts(IptvitaUi *ui)
  int bytes=0;
  if(ui->stream_cipher_method==1) {
   SceOff size=sceIoLseek(fd,0,SCE_SEEK_END);
-  if(size<=0 || size>4*1024*1024 || sceIoLseek(fd,0,SCE_SEEK_SET)<0) {
+  if(size<=0 || size>6*1024*1024 || sceIoLseek(fd,0,SCE_SEEK_SET)<0) {
    fail(ui,-26);
   }else {
    unsigned char *segment=(unsigned char*)malloc((size_t)size);
