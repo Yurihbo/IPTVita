@@ -40,7 +40,11 @@ static void parse_pmt(IptvitaTsPipeline *p,const unsigned char *s,size_t n)
   int type=s[pos],pid=((s[pos+1]&31)<<8)|s[pos+2];
   size_t esinfo=(((size_t)s[pos+3]&15)<<8)|s[pos+4];
   if(type==0x1b && p->video_pid<0) {p->video_pid=pid;p->video_type=type;}
-  if((type==0x0f || type==0x11 || type==0x03 || type==0x04) && p->audio_pid<0) {
+  /* Prefer ADTS AAC if multiple audio elementary streams are advertised.
+   * Other formats require a separate decoder and should not mask the
+   * playable AAC track. */
+  if((type==0x0f || type==0x11 || type==0x03 || type==0x04) &&
+     (p->audio_pid<0 || (type==0x0f && p->audio_type!=0x0f))) {
    p->audio_pid=pid;p->audio_type=type;
   }
   if(pos+5+esinfo>end)break;
