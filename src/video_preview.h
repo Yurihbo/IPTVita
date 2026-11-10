@@ -4,7 +4,8 @@
 #include <stdint.h>
 typedef struct {
  int width,height,decode_error;
- unsigned decoded,submitted;
+ unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
+ int waiting_for_idr;
 } IptvitaPreviewStats;
 void iptvita_preview_reset(void);
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
