@@ -74,3 +74,9 @@ When video playback is implemented, **START while watching a channel** will togg
 Press X while editing a field to open the Vita system keyboard (IME). L/R changes fields; Triangle saves; Circle cancels. SELECT toggles the lightweight on-screen character grid as a fallback; the grid still supports touch, analog stick and held D-pad repeat. The system keyboard accepts at most 2048 UTF-16 characters, so exceptionally long URLs must use the grid. No playback or playlist parsing is implemented yet.
 
 Native IME behavior must be tested on real Vita hardware. The app keeps the custom grid if native keyboard initialization fails. Existing saved sources use the same file format and remain compatible.
+
+## Stage 4.0 — M3U channel browser (first milestone)
+
+The first Stage 4 build parses **local** `#EXTM3U` files from `ux0:` and displays channel names and `group-title` metadata. Add a **Local M3U** source with an absolute path such as `ux0:data/IPTVita/test.m3u`. Open **Sources → SELECT (saved list) → X** to browse its channels; **R** edits the source, **Square** deletes it, and **Circle** returns to saved sources. Up/down scrolls channels, up to 300 entries in this first memory-bounded implementation. It never executes or plays an entry at this stage.
+
+**Important limitations:** online M3U URLs are saved but cannot be downloaded/opened in v0.4.0. Xtream, HLS playback, and direct-stream playback are not yet implemented. Online playlist fetching is the next Stage 4 milestone, followed by playback and favorites. Local playlists must start with `#EXTM3U`; line lengths over 4095 bytes are ignored. Only files under `ux0:` are accepted for now.
