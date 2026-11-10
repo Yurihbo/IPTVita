@@ -150,7 +150,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.4.0",2,p.muted);
+    label(24,511,"IPTVITA  V0.5.0",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -226,13 +226,20 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
 {
     heading(ui->page,p,tr(ui,"CANAIS DA PLAYLIST","PLAYLIST CHANNELS"),
             tr(ui,"CIMA/BAIXO NAVEGAR  /  O VOLTAR","UP/DOWN BROWSE  /  O BACK"));
+    if(ui->playlist.status==0) label(263,150,tr(ui,"BAIXANDO PLAYLIST...","DOWNLOADING PLAYLIST..."),3,p.accent);
     if(ui->playlist.status<0) {
         const char *pt=ui->playlist.status==-1?"ERRO AO LER ARQUIVO":
             ui->playlist.status==-2?"M3U INVALIDA OU VAZIA":
-            ui->playlist.status==-4?"CAMINHO LOCAL INVALIDO":"LIMITE DE CANAIS";
+            ui->playlist.status==-4?"CAMINHO LOCAL INVALIDO":
+            ui->playlist.status==-5?"PLAYLIST MAIOR QUE 4 MB":
+            ui->playlist.status==-6?"ERRO HTTP DO SERVIDOR":
+            ui->playlist.status==-7?"FALHA DE REDE OU HTTPS":"LIMITE DE CANAIS";
         const char *en=ui->playlist.status==-1?"FILE READ ERROR":
             ui->playlist.status==-2?"INVALID OR EMPTY M3U":
-            ui->playlist.status==-4?"INVALID LOCAL PATH":"CHANNEL LIMIT";
+            ui->playlist.status==-4?"INVALID LOCAL PATH":
+            ui->playlist.status==-5?"PLAYLIST EXCEEDS 4 MB":
+            ui->playlist.status==-6?"HTTP SERVER ERROR":
+            ui->playlist.status==-7?"NETWORK OR HTTPS ERROR":"CHANNEL LIMIT";
         label(263,150,ui->language?en:pt,3,p.accent);
     }
     char count[40];snprintf(count,sizeof(count),"%d CANAIS",ui->playlist.count);
@@ -272,7 +279,8 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
     }
     if(ui->save_status==1) label(252,491,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
     if(ui->save_status==4) label(252,491,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
-    if(ui->save_status==6) label(252,491,tr(ui,"DOWNLOAD ONLINE NA PROXIMA VERSAO","ONLINE DOWNLOAD IN NEXT VERSION"),2,p.accent);
+    if(ui->save_status==6) label(252,491,tr(ui,"XTREAM E DIRETO EM BREVE","XTREAM AND DIRECT COMING SOON"),2,p.accent);
+    if(ui->save_status==7) label(252,491,tr(ui,"URL INVALIDA OU DOWNLOAD OCUPADO","INVALID URL OR DOWNLOAD BUSY"),2,p.accent);
 }
 
 static void sources(const IptvitaUi *ui, Palette p)
@@ -333,7 +341,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.4.0 / CANAIS","VERSION 0.4.0 / CHANNELS"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.5.0 / M3U ONLINE","VERSION 0.5.0 / ONLINE M3U"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
