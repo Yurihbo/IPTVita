@@ -40,6 +40,7 @@ add_executable(IPTVita.elf
   src/player.c
   src/hls.c
   src/ts_pipeline.c
+  src/pes_assembler.c
   src/tls.c
   src/vita_entropy.c
 )
