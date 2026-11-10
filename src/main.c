@@ -22,6 +22,7 @@ int main(void)
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     vita2d_init();
+    iptvita_ui_font_init();
 
     while (!quit) {
         sceCtrlPeekBufferPositive(0, &pad, 1);
@@ -82,6 +83,7 @@ int main(void)
         sceKernelDelayThread(16000);
     }
 
+    iptvita_ui_font_fini();
     vita2d_fini();
     sceKernelExitProcess(0);
     return 0;
