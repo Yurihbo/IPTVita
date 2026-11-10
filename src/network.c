@@ -11,7 +11,8 @@
 #include <string.h>
 
 #define CACHE_PATH "ux0:data/IPTVita/online.m3u"
-#define CA_BUNDLE_PATH "app0:cacert.pem"
+#define CA_BUNDLE_PATH "ux0:data/IPTVita/cacert.pem"
+#define PACKAGED_CA_PATH "app0:cacert.pem"
 #define MAX_BYTES (4u*1024u*1024u)
 static char url_copy[4096];
 static volatile int state;
@@ -47,12 +48,29 @@ static int init_network(void)
  network_ready=1;
  return 0;
 }
+static int prepare_ca_bundle(void)
+{
+ SceUID in=sceIoOpen(PACKAGED_CA_PATH,SCE_O_RDONLY,0);
+ if(in<0) return -1;
+ SceUID out=sceIoOpen(CA_BUNDLE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
+ if(out<0) {sceIoClose(in);return -2;}
+ char buf[4096];int n,ok=1;size_t total=0;
+ while((n=sceIoRead(in,buf,sizeof(buf)))>0) {
+  if(sceIoWrite(out,buf,n)!=n) {ok=0;break;}
+  total+=(size_t)n;
+ }
+ if(n<0) ok=0;
+ sceIoClose(in);sceIoClose(out);
+ if(!ok || total<1024) {sceIoRemove(CA_BUNDLE_PATH);return -3;}
+ return 0;
+}
 static int download_thread(SceSize args,void *argp)
 {
  (void)args;(void)argp;
  int result=-1;
  if(init_network()<0) {result=-8;goto finish;}
  sceIoMkdir("ux0:data/IPTVita",0777);
+ if(prepare_ca_bundle()<0) {result=-11;goto finish;}
  SceUID fd=sceIoOpen(CACHE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
  if(fd<0) {result=-9;goto finish;}
  CURL *curl=curl_easy_init();
@@ -63,7 +81,7 @@ static int download_thread(SceSize args,void *argp)
  curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
  curl_easy_setopt(curl,CURLOPT_CONNECTTIMEOUT,12L);
  curl_easy_setopt(curl,CURLOPT_TIMEOUT,50L);
- curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.3");
+ curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.4");
  curl_easy_setopt(curl,CURLOPT_CAINFO,CA_BUNDLE_PATH);
  curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,write_file);
  curl_easy_setopt(curl,CURLOPT_WRITEDATA,&d);
