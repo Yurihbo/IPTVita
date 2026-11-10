@@ -15,7 +15,7 @@ find_package(OpenSSL REQUIRED)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
-set(VITA_VERSION "00.58")
+set(VITA_VERSION "00.59")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -30,6 +30,7 @@ add_executable(IPTVita.elf
   src/playlist.c
   src/network.c
   src/player.c
+  src/hls.c
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
