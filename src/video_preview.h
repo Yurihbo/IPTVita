@@ -5,6 +5,8 @@
 typedef struct {
  int width,height,decode_error;
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
+ unsigned long long last_output_us;
+ int buffer_percent;
  int waiting_for_idr;
  int fatal;
  int decoder_phase; /* 0 idle, 1 init failure, 2 decode, 3 output seen */
