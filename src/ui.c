@@ -466,6 +466,9 @@ void iptvita_ui_render(const IptvitaUi *ui)
             IptvitaAudioStats audio=iptvita_audio_stats();
             snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
             label(25,463,details,2,p.white);
+            IptvitaPreviewStats v=iptvita_preview_stats();
+            snprintf(details,sizeof(details),"IDR %u / AGUARDA %d / RECUP %u / FILA %u / DESC %u",v.keyframes,v.waiting_for_idr,v.recoveries,v.queued,v.dropped);
+            label(25,485,details,2,p.muted);
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
                   tr(ui,"X PAUSAR  R1 OCULTAR INFO  O VOLTAR","X PAUSE  R1 HIDE INFO  O BACK"),2,p.accent);
