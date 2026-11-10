@@ -10,10 +10,12 @@ endif()
 
 project(IPTVita C)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
+find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
-set(VITA_VERSION "00.40")
+set(VITA_VERSION "00.50")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -26,6 +28,7 @@ add_executable(IPTVita.elf
   src/sources.c
   src/keyboard.c
   src/playlist.c
+  src/network.c
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
@@ -40,11 +43,18 @@ target_link_libraries(IPTVita.elf
   SceTouch_stub
   SceIme_stub
   SceIofilemgr_stub
+  SceNet_stub
+  SceNetCtl_stub
+  SceHttp_stub
+  SceSsl_stub
   SceDisplay_stub
   SceGxm_stub
   SceSysmodule_stub
   SceCommonDialog_stub
   ${VITA_EXTRA_STUBS}
+  ${CURL_LIBRARIES}
+  ${OPENSSL_LIBRARIES}
+  z
   m
 )
 
