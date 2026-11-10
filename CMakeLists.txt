@@ -39,6 +39,7 @@ add_executable(IPTVita.elf
   src/network.c
   src/player.c
   src/hls.c
+  src/hls_crypto.c
   src/ts_pipeline.c
   src/pes_assembler.c
   src/h264_au.c
