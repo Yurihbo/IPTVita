@@ -20,7 +20,7 @@ void iptvita_avc_close(IptvitaAvcDecoder *d)
  d->library_open=0;
  memset(&d->ctrl,0,sizeof(d->ctrl));
 }
-int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
+static int open_attempt(IptvitaAvcDecoder *d,int width,int height,int references)
 {
  if(!d)return -1;
  memset(d,0,sizeof(*d));d->frame_uid=-1;d->es_uid=-1;
@@ -49,20 +49,30 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
  query.horizontal=w;query.vertical=h;query.numOfRefFrames=(unsigned)references;
  ret=sceAvcdecQueryDecoderMemSize(AVC_TYPE,&query,&memory);
  if(ret<0)goto error;
- SceKernelAllocMemBlockOpt opt;
- memset(&opt,0,sizeof(opt));
- opt.size=sizeof(opt);
- opt.attr=SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT;
- opt.alignment=256*1024;
- unsigned alloc=(memory.frameMemSize+262143u)&~262143u;
- d->frame_uid=sceKernelAllocMemBlock("iptvita_avc_frame",SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,alloc,&opt);
- if(d->frame_uid<0){ret=d->frame_uid;goto error;}
- void *base=0;
- ret=sceKernelGetMemBlockBase(d->frame_uid,&base);
- if(ret<0)goto error;
- d->ctrl.frameBuf.pBuf=base;
- d->ctrl.frameBuf.size=alloc;
- ret=sceAvcdecCreateDecoder(AVC_TYPE,&d->ctrl,&query);
+ /* Try both codec-visible memory pools. A CDRAM allocation can succeed
+  * while AVCDEC still rejects it; physical main memory is a valid fallback. */
+ unsigned needed=memory.frameMemSize;
+ if(!needed || needed>64u*1024u*1024u){ret=-5;goto error;}
+ ret=-6;
+ for(int kind=0;kind<2;kind++) {
+  unsigned align=kind?1024u*1024u:256u*1024u;
+  unsigned alloc=(needed+align-1u)&~(align-1u);
+  int type=kind?SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW:
+                SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW;
+  SceUID uid=sceKernelAllocMemBlock("iptvita_avc_frame",type,alloc,NULL);
+  if(uid<0){ret=uid;continue;}
+  void *base=NULL;
+  int got=sceKernelGetMemBlockBase(uid,&base);
+  if(got<0 || !base){sceKernelFreeMemBlock(uid);ret=got<0?got:-6;continue;}
+  memset(&d->ctrl,0,sizeof(d->ctrl));
+  d->ctrl.frameBuf.pBuf=base;
+  d->ctrl.frameBuf.size=alloc;
+  got=sceAvcdecCreateDecoder(AVC_TYPE,&d->ctrl,&query);
+  if(got>=0){d->frame_uid=uid;ret=0;break;}
+  ret=got;
+  sceKernelFreeMemBlock(uid);
+  memset(&d->ctrl,0,sizeof(d->ctrl));
+ }
  if(ret<0)goto error;
  d->decoder_open=1;d->width=width;d->height=height;
  /* The AVC hardware requires contiguous/codec-visible ES and output memory:
@@ -92,6 +102,22 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
 error:
  iptvita_avc_close(d);
  return ret;
+}
+
+/* Some firmware/stream combinations cannot reserve enough reference
+ * picture memory for the requested configuration. Try a lower count rather
+ * than leaving an otherwise decodable stream permanently unavailable. */
+int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
+{
+ if(!d)return -1;
+ if(references<2)references=2;
+ if(references>8)references=8;
+ int rc=-1;
+ for(int refs=references;refs>=2;refs--) {
+  rc=open_attempt(d,width,height,refs);
+  if(rc>=0)return 0;
+ }
+ return rc;
 }
 
 /* Submit a single complete Annex-B access unit using the documented public
