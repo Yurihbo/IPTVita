@@ -115,17 +115,20 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             ui->source_index=ui->list_index;
             ui->channel_index=0;
             ui->save_status=0;
-            int type=(int)ui->sources.items[ui->source_index].type;
-            if(type==3) {
-                iptvita_playlist_load(&ui->playlist,ui->sources.items[ui->source_index].url);
+            const IptvitaSource *source=&ui->sources.items[ui->source_index];
+            const char *url=source->url;
+            int remote=strncmp(url,"https://",8)==0 || strncmp(url,"http://",7)==0;
+            if(strncmp(url,"ux0:",4)==0) {
+                iptvita_playlist_load(&ui->playlist,url);
                 ui->browsing=1;
-            } else if(type==0) {
-                if(iptvita_network_start(ui->sources.items[ui->source_index].url)==0) {
+            } else if(remote && source->type!=1) {
+                /* Recognize online M3U by address, including older saved source types. */
+                if(iptvita_network_start(url)==0) {
                     ui->browsing=1;
                     ui->playlist.count=0;
                     ui->playlist.status=0;
                 } else ui->save_status=7;
-            } else ui->save_status=6; /* Xtream and direct streams not yet supported */
+            } else ui->save_status=6;
         }
         if((pressed&SCE_CTRL_RTRIGGER) && ui->sources.count)
             begin_edit(ui,ui->list_index,0);
