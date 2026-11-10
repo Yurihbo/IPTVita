@@ -1,98 +1,241 @@
 #include "ui.h"
+#include <vita2d.h>
+#include <stddef.h>
 
-#define BG       RGBA8(10, 23, 42, 255)
-#define SURFACE  RGBA8(17, 39, 65, 255)
-#define PANEL    RGBA8(24, 51, 81, 255)
-#define SELECTED RGBA8(34, 81, 129, 255)
-#define ACCENT   RGBA8(111, 192, 252, 255)
-#define WHITE    RGBA8(245, 250, 255, 255)
-#define MUTED    RGBA8(157, 181, 206, 255)
+#define C(r,g,b) RGBA8(r,g,b,255)
 
-static void bars(int x, int y, int width, unsigned int color)
+/*
+ * IPTVita stage 2: an original 5x5 pixel font and lightweight UI.
+ * The interface uses only filled rectangles, with no texture allocations.
+ */
+typedef struct {
+    char ch;
+    unsigned char rows[5];
+} Glyph;
+static const Glyph font[] = {
+    {'A', {0x0E,0x11,0x1F,0x11,0x11}},
+    {'B', {0x1E,0x11,0x1E,0x11,0x1E}},
+    {'C', {0x0F,0x10,0x10,0x10,0x0F}},
+    {'D', {0x1E,0x11,0x11,0x11,0x1E}},
+    {'E', {0x1F,0x10,0x1E,0x10,0x1F}},
+    {'F', {0x1F,0x10,0x1E,0x10,0x10}},
+    {'G', {0x0F,0x10,0x17,0x11,0x0F}},
+    {'H', {0x11,0x11,0x1F,0x11,0x11}},
+    {'I', {0x1F,0x04,0x04,0x04,0x1F}},
+    {'J', {0x07,0x02,0x02,0x12,0x0C}},
+    {'K', {0x11,0x12,0x16,0x12,0x11}},
+    {'L', {0x10,0x10,0x10,0x10,0x1F}},
+    {'M', {0x11,0x1B,0x15,0x11,0x11}},
+    {'N', {0x11,0x19,0x15,0x13,0x11}},
+    {'O', {0x0E,0x11,0x11,0x11,0x0E}},
+    {'P', {0x1E,0x11,0x1E,0x10,0x10}},
+    {'Q', {0x0E,0x11,0x11,0x15,0x0F}},
+    {'R', {0x1E,0x11,0x1E,0x12,0x11}},
+    {'S', {0x0F,0x10,0x0E,0x01,0x1E}},
+    {'T', {0x1F,0x04,0x04,0x04,0x04}},
+    {'U', {0x11,0x11,0x11,0x11,0x0E}},
+    {'V', {0x11,0x11,0x11,0x0A,0x04}},
+    {'W', {0x11,0x11,0x15,0x1B,0x11}},
+    {'X', {0x11,0x11,0x0A,0x11,0x11}},
+    {'Y', {0x11,0x11,0x0A,0x04,0x04}},
+    {'Z', {0x1F,0x02,0x04,0x08,0x1F}},
+    {'0', {0x0E,0x13,0x15,0x15,0x0E}},
+    {'1', {0x04,0x0C,0x04,0x04,0x0E}},
+    {'2', {0x0E,0x11,0x02,0x04,0x1F}},
+    {'3', {0x1E,0x01,0x06,0x01,0x1E}},
+    {'4', {0x12,0x12,0x1F,0x02,0x02}},
+    {'5', {0x1F,0x10,0x1E,0x01,0x1E}},
+    {'6', {0x07,0x10,0x1E,0x11,0x0E}},
+    {'7', {0x1F,0x01,0x02,0x04,0x08}},
+    {'8', {0x0E,0x11,0x0E,0x11,0x0E}},
+    {'9', {0x0E,0x11,0x0F,0x01,0x0E}},
+    {'/', {0x01,0x02,0x04,0x08,0x10}},
+    {'-', {0x00,0x00,0x1F,0x00,0x00}},
+    {'.', {0x00,0x00,0x00,0x00,0x04}},
+    {':', {0x00,0x04,0x00,0x04,0x00}},
+    {'+', {0x00,0x04,0x1F,0x04,0x00}},
+    {'(', {0x02,0x04,0x08,0x08,0x02}},
+    {')', {0x08,0x04,0x02,0x02,0x08}},
+    {' ', {0x00,0x00,0x00,0x00,0x00}},
+    {'?', {0x0E,0x11,0x02,0x04,0x04}},
+    {'!', {0x04,0x04,0x04,0x00,0x04}},
+    {',', {0x00,0x00,0x00,0x04,0x08}},
+    {'=', {0x00,0x1F,0x00,0x1F,0x00}},
+};
+
+typedef struct {
+    unsigned int bg, sidebar, surface, raised, selected, accent, white, muted;
+} Palette;
+
+static Palette palette(int theme)
 {
-    vita2d_draw_rectangle(x, y, width, 3, color);
+    if (theme == 1) {
+        Palette p = {C(8,20,33), C(13,32,50), C(21,44,65), C(28,57,80),
+                     C(39,88,118), C(95,205,220), C(244,250,255), C(153,181,204)};
+        return p;
+    }
+    if (theme == 2) {
+        Palette p = {C(9,15,33), C(18,25,51), C(29,38,70), C(39,51,84),
+                     C(57,73,129), C(148,170,254), C(244,249,255), C(159,173,208)};
+        return p;
+    }
+    Palette p = {C(9,22,40), C(13,31,54), C(20,43,71), C(29,55,87),
+                 C(37,78,123), C(112,193,251), C(244,249,255), C(155,182,208)};
+    return p;
 }
 
-static void text_glyph(int x, int y, char ch, int scale, unsigned int color)
+static void rect(int x, int y, int w, int h, unsigned int color)
 {
-    /*
-     * Original built-in 3x5 bitmap font. No external font or third-party
-     * image assets are needed in Stage 1.
-     */
-    static const struct { char ch; unsigned short dots; } glyphs[] = {
-        {'A',0x7bed}, {'B',0x6bad}, {'C',0x724e}, {'D',0x6b6b},
-        {'E',0x72cf}, {'F',0x12cf}, {'G',0x7a4e}, {'H',0x5bed},
-        {'I',0x7497}, {'J',0x3a92}, {'K',0x5bad}, {'L',0x7249},
-        {'M',0x5f7d}, {'N',0x5f6d}, {'O',0x7b6f}, {'P',0x13ef},
-        {'Q',0x7f6f}, {'R',0x5bef}, {'S',0x79ce}, {'T',0x2497},
-        {'U',0x7b6d}, {'V',0x2b6d}, {'W',0x5f6d}, {'X',0x5aad},
-        {'Y',0x2495}, {'Z',0x72a7}, {'0',0x7b6f}, {'1',0x7492},
-        {'2',0x73e7}, {'3',0x79a7}, {'4',0x49ed}, {'5',0x79cf},
-        {'6',0x7bcf}, {'7',0x2497}, {'8',0x7bef}, {'9',0x79ef},
-        {'-',0x01c0}, {'.',0x4000}, {'/',0x0124}, {':',0x00a0},
-        {' ',0x0000}
-    };
-    unsigned short pattern = 0;
-    unsigned int i;
-    if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
-    for (i = 0; i < sizeof(glyphs) / sizeof(glyphs[0]); ++i) {
-        if (glyphs[i].ch == ch) {
-            pattern = glyphs[i].dots;
-            break;
+    vita2d_draw_rectangle(x, y, w, h, color);
+}
+static void label(int x, int y, const char *s, int scale, unsigned int color)
+{
+    while (*s) {
+        char ch = *s++;
+        if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+        const unsigned char *rows = NULL;
+        for (size_t i = 0; i < sizeof(font)/sizeof(font[0]); ++i) {
+            if (font[i].ch == ch) { rows = font[i].rows; break; }
         }
-    }
-    for (int row = 0; row < 5; ++row) {
-        for (int col = 0; col < 3; ++col) {
-            if (pattern & (1u << (row * 3 + col))) {
-                vita2d_draw_rectangle(x + col * scale, y + row * scale,
-                                      scale - 1, scale - 1, color);
+        if (rows) {
+            for (int r = 0; r < 5; ++r) {
+                unsigned char mask = rows[r];
+                for (int c = 0; c < 5; ++c)
+                    if (mask & (1u << (4 - c)))
+                        rect(x + c*scale, y + r*scale, scale, scale, color);
             }
         }
+        x += 6*scale;
     }
 }
-
-static void label(int x, int y, const char *value, int scale, unsigned int color)
+static void stroke(int x, int y, int w, int h, unsigned int color)
 {
-    while (*value) {
-        text_glyph(x, y, *value, scale, color);
-        x += 4 * scale;
-        ++value;
+    rect(x,y,w,2,color); rect(x,y+h-2,w,2,color);
+    rect(x,y,2,h,color); rect(x+w-2,y,2,h,color);
+}
+static void badge(int x, int y, const char *value, unsigned int fg, unsigned int bg)
+{
+    rect(x,y,180,27,bg);
+    label(x+12,y+8,value,2,fg);
+}
+static void sidebar(const IptvitaUi *ui, Palette p)
+{
+    static const char *pages[]={"HOME","SOURCES","SETTINGS","ABOUT"};
+    rect(0,0,222,544,p.sidebar);
+    rect(0,0,222,4,p.accent);
+    label(23,30,"IPTVITA",5,p.white);
+    label(24,70,"YOUR MEDIA HUB",2,p.muted);
+    rect(22,101,176,2,p.raised);
+    for (int i=0;i<IPTVITA_NAV_COUNT;++i) {
+        int y=136+i*70;
+        int active=ui->page==i;
+        rect(14,y,194,52,active?p.selected:p.sidebar);
+        if(active) rect(14,y,4,52,p.accent);
+        if(!ui->focus_content && ui->nav_index==i) stroke(14,y,194,52,p.accent);
+        label(36,y+17,pages[i],3,active?p.white:p.muted);
+    }
+    rect(22,452,176,2,p.raised);
+    label(23,476,"BY YURIHBO",3,p.accent);
+    label(24,511,"IPTVITA  V0.2",2,p.muted);
+}
+static void heading(int page, Palette p, const char *title, const char *hint)
+{
+    (void)page;
+    label(252,31,title,5,p.white);
+    label(254,73,hint,2,p.muted);
+    rect(251,106,677,2,p.surface);
+}
+static void home(const IptvitaUi *ui, Palette p)
+{
+    heading(ui->page,p,"WELCOME","A LIGHTWEIGHT IPTV PLAYER FOR PS VITA");
+    badge(744,30,"UI PREVIEW",p.accent,p.surface);
+    rect(252,130,672,148,p.surface);
+    rect(252,130,5,148,p.accent);
+    label(278,157,"YOUR STREAMS",5,p.white);
+    label(280,203,"ONE PLACE FOR ALL YOUR SOURCES",2,p.muted);
+    label(280,241,"OPEN SOURCES TO CONTINUE",2,p.accent);
+    rect(252,299,324,146,p.raised);
+    rect(595,299,329,146,p.raised);
+    label(277,327,"0",7,p.white);
+    label(278,395,"SAVED SOURCES",2,p.muted);
+    label(617,338,"HLS  AES-128",3,p.white);
+    label(617,387,"PLANNED FOR STAGE 4",2,p.muted);
+    label(252,488,"L/R SWITCH  |  X SELECT  |  START EXIT",2,p.muted);
+}
+static void sources(const IptvitaUi *ui, Palette p)
+{
+    static const char *names[]={"M3U / M3U8","XTREAM CODES","DIRECT STREAM","LOCAL M3U"};
+    static const char *details[]={"PLAYLIST URL","SERVER / USER / PASS","SINGLE VIDEO URL","FILE ON MEMORY CARD"};
+    heading(ui->page,p,"SOURCES","CHOOSE THE FORMAT YOU WANT TO ADD");
+    for (int i=0;i<IPTVITA_SOURCE_COUNT;++i) {
+        int x=252+(i%2)*342, y=131+(i/2)*153;
+        int active=ui->card_index==i && ui->focus_content;
+        rect(x,y,326,135,active?p.selected:p.surface);
+        if(active)stroke(x,y,326,135,p.accent);
+        rect(x+15,y+17,40,37,p.raised);
+        label(x+27,y+30,i==0?"M":i==1?"X":i==2?"D":"F",3,p.accent);
+        label(x+18,y+69,names[i],3,p.white);
+        label(x+18,y+105,details[i],2,p.muted);
+    }
+    label(252,476,"X PREVIEW  |  LEFT MENU  |  O BACK",2,p.muted);
+}
+static void settings(const IptvitaUi *ui, Palette p)
+{
+    static const char *items[]={"COLOR THEME","PREFERRED RESOLUTION","LANGUAGE"};
+    static const char *detail[]={"BLUE / TEAL / INDIGO","AUTO / 720P / 1080P","PORTUGUESE (PLANNED)"};
+    heading(ui->page,p,"SETTINGS","VISUAL PREFERENCES AND FUTURE OPTIONS");
+    for (int i=0;i<3;++i) {
+        int y=140+i*94;
+        int active=ui->settings_index==i && ui->focus_content;
+        rect(252,y,672,78,active?p.selected:p.surface);
+        if(active) rect(252,y,4,78,p.accent);
+        label(277,y+15,items[i],3,p.white);
+        if (i==0) {
+            label(277,y+50,ui->theme==0?"DEEP BLUE":ui->theme==1?"OCEAN TEAL":"INDIGO",2,p.accent);
+        } else {
+            label(277,y+50,detail[i],2,p.muted);
+        }
+    }
+    label(252,467,"X CHANGE THEME  |  O BACK",2,p.muted);
+    label(252,495,"OTHER OPTIONS ARRIVE WITH PLAYBACK",2,p.muted);
+}
+static void about(const IptvitaUi *ui, Palette p)
+{
+    heading(ui->page,p,"ABOUT IPTVITA","INDEPENDENT OPEN-SOURCE PROJECT");
+    rect(252,137,672,315,p.surface);
+    rect(252,137,5,315,p.accent);
+    label(282,169,"IPTVITA",6,p.white);
+    label(283,221,"VERSION 0.2.0  /  UI PREVIEW",3,p.accent);
+    label(284,280,"CREATED BY YURIHBO",3,p.white);
+    label(284,328,"MIT LICENSE  2026 YURIHBO",2,p.muted);
+    label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
+    label(252,488,"O BACK  |  L/R SWITCH PAGES",2,p.muted);
+}
+static void dialog(const IptvitaUi *ui, Palette p)
+{
+    rect(168,152,625,241,p.bg);
+    stroke(168,152,625,241,p.accent);
+    label(206,193,ui->quit_confirm?"EXIT IPTVITA?":"COMING IN STAGE 3",4,p.white);
+    if (ui->quit_confirm) {
+        label(206,263,"X EXIT APP",3,p.accent);
+        label(206,316,"O KEEP BROWSING",3,p.muted);
+    } else {
+        label(206,263,"THIS OPTION IS A PREVIEW",3,p.muted);
+        label(206,316,"O RETURN TO THE MENU",3,p.accent);
     }
 }
-
 void iptvita_ui_render(const IptvitaUi *ui)
 {
-    static const char *items[IPTVITA_ITEM_COUNT] = {
-        "M3U / M3U8", "XTREAM CODES", "DIRECT STREAM", "LOCAL M3U"
-    };
-
+    Palette p=palette(ui->theme);
     vita2d_clear_screen();
-    vita2d_draw_rectangle(0, 0, IPTVITA_WIDTH, IPTVITA_HEIGHT, BG);
-    vita2d_draw_rectangle(0, 0, IPTVITA_WIDTH, 80, SURFACE);
-    vita2d_draw_rectangle(0, 77, IPTVITA_WIDTH, 3, ACCENT);
-    label(36, 24, "IPTVITA", 7, WHITE);
-    label(36, 57, "YOUR STREAMS, YOUR WAY", 2, MUTED);
-
-    label(44, 112, "ADD A SOURCE", 4, WHITE);
-    for (int i = 0; i < IPTVITA_ITEM_COUNT; ++i) {
-        int x = 44 + (i % 2) * 448;
-        int y = 150 + (i / 2) * 126;
-        int active = (ui->selected == i);
-        vita2d_draw_rectangle(x, y, 420, 104, active ? SELECTED : PANEL);
-        if (active) vita2d_draw_rectangle(x, y, 5, 104, ACCENT);
-        label(x + 23, y + 25, items[i], 4, WHITE);
-        label(x + 23, y + 65, "COMING SOON", 2, MUTED);
+    rect(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,p.bg);
+    sidebar(ui,p);
+    switch (ui->page) {
+        case IPTVITA_HOME: home(ui,p); break;
+        case IPTVITA_SOURCES: sources(ui,p); break;
+        case IPTVITA_SETTINGS: settings(ui,p); break;
+        case IPTVITA_ABOUT: about(ui,p); break;
+        default: home(ui,p); break;
     }
-
-    bars(44, 463, 868, PANEL);
-    label(44, 487, "BY YURIHBO", 3, ACCENT);
-    label(708, 489, "STAGE 1  V0.1", 2, MUTED);
-
-    if (ui->show_about) {
-        vita2d_draw_rectangle(240, 180, 480, 190, SURFACE);
-        vita2d_draw_rectangle(240, 180, 480, 4, ACCENT);
-        label(278, 213, "IPTVITA V0.1", 5, WHITE);
-        label(278, 270, "FOUNDATION BUILD", 3, MUTED);
-        label(278, 321, "CIRCLE TO CLOSE", 2, ACCENT);
-    }
+    if (ui->show_dialog || ui->quit_confirm) dialog(ui,p);
 }
