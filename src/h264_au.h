@@ -7,6 +7,8 @@ typedef void (*IptvitaAuSink)(void *user,const unsigned char *data,size_t size,u
 typedef struct {
  unsigned char *buffer;
  size_t used;
+ unsigned char *pending;
+ size_t pending_used,pending_capacity;
  int has_vcl,has_idr,has_pts;
  uint64_t pts;
  unsigned units,frames,dropped;
