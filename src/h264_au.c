@@ -65,62 +65,109 @@ static void emit(IptvitaH264Au *a)
  }
  a->used=0;a->has_vcl=0;a->has_idr=0;a->has_pts=0;
 }
+/* A NAL may be split across multiple PES payloads. Keep incomplete trailing
+ * bytes until the next Annex-B start code arrives, instead of submitting a
+ * truncated slice that the Vita AVC decoder rejects as invalid parameters. */
+static void consume_nal(IptvitaH264Au *a,const unsigned char *data,size_t n)
+{
+ size_t sc=prefix(data,n,0);
+ if(!sc || n<=sc)return;
+ size_t nalpos=sc;
+ int type=data[nalpos]&31;
+ int vcl=type>=1 && type<=5;
+ int boundary=(type==9 && a->has_vcl) ||
+     (vcl && a->has_vcl && first_mb(data+nalpos,n-nalpos)==0);
+ if(boundary)emit(a);
+ size_t payload=n-nalpos;
+ if(payload+4>IPTVITA_H264_AU_MAX-a->used) {
+  a->dropped++;
+  a->used=0;a->has_vcl=0;a->has_idr=0;a->has_pts=0;
+  return;
+ }
+ static const unsigned char sc4[4]={0,0,0,1};
+ memcpy(a->buffer+a->used,sc4,4);a->used+=4;
+ memcpy(a->buffer+a->used,data+nalpos,payload);a->used+=payload;
+ if(vcl)a->has_vcl=1;
+ if(type==5)a->has_idr=1;
+ if(type==7 && payload+4<=sizeof(a->sps)) {
+  memcpy(a->sps,sc4,4);memcpy(a->sps+4,data+nalpos,payload);
+  a->sps_size=payload+4;
+ }
+ if(type==8 && payload+4<=sizeof(a->pps)) {
+  memcpy(a->pps,sc4,4);memcpy(a->pps+4,data+nalpos,payload);
+  a->pps_size=payload+4;
+ }
+ a->units++;
+}
+static void consume_pending(IptvitaH264Au *a,int finish)
+{
+ while(a->pending_used) {
+  size_t at=find_nal(a->pending,a->pending_used,0);
+  if(at>=a->pending_used) {
+   /* A start code can span PES boundaries; preserve the final three bytes. */
+   if(!finish && a->pending_used>3) {
+    memmove(a->pending,a->pending+a->pending_used-3,3);
+    a->pending_used=3;
+   } else if(finish)a->pending_used=0;
+   return;
+  }
+  if(at) {
+   memmove(a->pending,a->pending+at,a->pending_used-at);
+   a->pending_used-=at;
+  }
+  size_t start=prefix(a->pending,a->pending_used,0);
+  if(!start)return;
+  size_t next=find_nal(a->pending,a->pending_used,start);
+  if(next>=a->pending_used && !finish)return;
+  size_t len=next<a->pending_used?next:a->pending_used;
+  if(len>start) {
+   if(a->used==0 && a->pending_has_pts) {
+    a->pts=a->pending_pts;a->has_pts=1;
+   }
+   consume_nal(a,a->pending,len);
+  }
+  if(len>=a->pending_used){a->pending_used=0;return;}
+  memmove(a->pending,a->pending+len,a->pending_used-len);
+  a->pending_used-=len;
+ }
+}
 int iptvita_h264_au_open(IptvitaH264Au *a,IptvitaAuSink sink,void *user)
 {
  if(!a || !sink)return -1;
  memset(a,0,sizeof(*a));
  a->buffer=malloc(IPTVITA_H264_AU_MAX);
- if(!a->buffer)return -2;
+ a->pending_capacity=IPTVITA_H264_AU_MAX;
+ a->pending=malloc(a->pending_capacity);
+ if(!a->buffer || !a->pending) {
+  free(a->buffer);free(a->pending);
+  a->buffer=a->pending=NULL;return -2;
+ }
  a->sink=sink;a->user=user;return 0;
 }
 void iptvita_h264_au_pes(void *user,const unsigned char *data,size_t size,uint64_t pts,int has_pts)
 {
  IptvitaH264Au *a=(IptvitaH264Au*)user;
- if(!a || !a->buffer || !data)return;
- size_t at=find_nal(data,size,0);
- while(at<size) {
-  size_t start_len=prefix(data,size,at);
-  size_t end=find_nal(data,size,at+start_len);
-  size_t nalpos=at+start_len;
-  if(nalpos>=end){at=end;continue;}
-  int type=data[nalpos]&31;
-  int vcl=type>=1 && type<=5;
-  int boundary=(type==9 && a->has_vcl) ||
-   (vcl && a->has_vcl && first_mb(data+nalpos,end-nalpos)==0);
-  if(boundary)emit(a);
-  if(a->used==0 && has_pts) {a->pts=pts;a->has_pts=1;}
-  if(end-at>IPTVITA_H264_AU_MAX-a->used) {
-   a->dropped++;a->used=0;a->has_vcl=0;a->has_idr=0;a->has_pts=0;
-   at=end;continue;
+ if(!a || !a->buffer || !a->pending || !data || !size)return;
+ if(!a->pending_used){a->pending_pts=pts;a->pending_has_pts=has_pts;}
+ if(size>a->pending_capacity-a->pending_used) {
+  consume_pending(a,0);
+  if(size>a->pending_capacity-a->pending_used) {
+   a->dropped++;a->pending_used=0;return;
   }
-  /* Normalize all start codes to 00 00 00 01 for the hardware decoder. */
-  size_t payload=end-nalpos;
-  if(payload+4>IPTVITA_H264_AU_MAX-a->used) {
-   a->dropped++;a->used=0;a->has_vcl=0;a->has_idr=0;a->has_pts=0;
-   at=end;continue;
-  }
-  static const unsigned char sc[4]={0,0,0,1};
-  memcpy(a->buffer+a->used,sc,4);a->used+=4;
-  memcpy(a->buffer+a->used,data+nalpos,payload);a->used+=payload;
-  if(vcl)a->has_vcl=1;
-  if(type==5)a->has_idr=1;
-  if(type==7 && payload+4<=sizeof(a->sps)) {
-   memcpy(a->sps,sc,4);
-   memcpy(a->sps+4,data+nalpos,payload);
-   a->sps_size=payload+4;
-  }
-  if(type==8 && payload+4<=sizeof(a->pps)) {
-   memcpy(a->pps,sc,4);
-   memcpy(a->pps+4,data+nalpos,payload);
-   a->pps_size=payload+4;
-  }
-  a->units++;
-  at=end;
  }
+ memcpy(a->pending+a->pending_used,data,size);
+ a->pending_used+=size;
+ consume_pending(a,0);
 }
-void iptvita_h264_au_flush(IptvitaH264Au *a){if(a)emit(a);}
+void iptvita_h264_au_flush(IptvitaH264Au *a)
+{
+ if(!a)return;
+ if(a->pending)consume_pending(a,1);
+ emit(a);
+}
 void iptvita_h264_au_close(IptvitaH264Au *a)
 {
  if(!a)return;
- free(a->buffer);a->buffer=NULL;a->used=0;a->has_vcl=0;
+ free(a->buffer);free(a->pending);
+ a->buffer=a->pending=NULL;a->used=a->pending_used=0;a->has_vcl=0;
 }
