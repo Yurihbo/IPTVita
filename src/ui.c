@@ -467,7 +467,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
                 IptvitaAudioStats audio=iptvita_audio_stats();
                 int pct=video.buffer_percent;
                 if(audio.played && audio.buffered<72u) {
-                    int apct=(int)(audio.buffered*100u/48u);
+                    int apct=(int)(audio.buffered*100u/72u);
                     if(apct<pct)pct=apct;
                 }
                 if(pct<0)pct=0;
