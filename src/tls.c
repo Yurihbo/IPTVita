@@ -76,7 +76,7 @@ static int tls_get_once(const char *url,const unsigned char *ca,size_t ca_len,
  int rc;
  do {rc=mbedtls_ssl_handshake(&ssl);}while(rc==MBEDTLS_ERR_SSL_WANT_READ||rc==MBEDTLS_ERR_SSL_WANT_WRITE);
  if(rc!=0){result=-5;goto done;}
- char req[8192];
+ char req[16384];
  int n=snprintf(req,sizeof(req),"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: IPTVita/0.6\r\nAccept: */*\r\nConnection: close\r\n\r\n",path,domain);
  if(n<0 || n>=(int)sizeof(req)){result=-6;goto done;}
  size_t sent=0;
@@ -134,16 +134,16 @@ done:
 int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
                     unsigned char *out,size_t capacity,int *http_code)
 {
- if(!url || strlen(url)>=4096)return -2;
- char current[4096];
+ if(!url || strlen(url)>=8192)return -2;
+ char current[8192];
  snprintf(current,sizeof(current),"%s",url);
  for(int hop=0;hop<=5;hop++) {
-  char location[4096];
+  char location[8192];
   int n=tls_get_once(current,ca,ca_len,out,capacity,http_code,location,sizeof(location));
   if(n!=-12)return n;
   if(hop==5)return -13;
   if(!location[0])return -14;
-  char next[4096];
+  char next[8192];
   if(strncmp(location,"https://",8)==0) {
    if(strlen(location)>=sizeof(next))return -15;
    strcpy(next,location);
