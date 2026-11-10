@@ -12,10 +12,16 @@ project(IPTVita C)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
+include(FetchContent)
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(iptvita_mbedtls URL https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v3.6.4.tar.gz DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(iptvita_mbedtls)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
-set(VITA_VERSION "00.59")
+set(VITA_VERSION "00.60")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -31,6 +37,7 @@ add_executable(IPTVita.elf
   src/network.c
   src/player.c
   src/hls.c
+  src/tls.c
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
@@ -41,6 +48,9 @@ file(GLOB VITA_EXTRA_STUBS
 
 target_link_libraries(IPTVita.elf
   vita2d
+  mbedtls
+  mbedx509
+  mbedcrypto
   SceCtrl_stub
   SceTouch_stub
   ScePgf_stub
