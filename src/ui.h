@@ -32,6 +32,7 @@ typedef struct {
     int player_probe_result;
     int player_probe_target;
     int stream_paused;
+    int stream_fill_screen; /* L1 toggles contain vs center-cropped fill */
     unsigned long long stream_last_sequence,stream_selected_sequence;
     int stream_has_sequence;
     unsigned long long stream_refresh_at;
