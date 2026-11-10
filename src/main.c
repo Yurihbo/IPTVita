@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "input.h"
 #include "keyboard.h"
+#include "network.h"
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
@@ -64,6 +65,16 @@ int main(void)
             quit = iptvita_handle_input(&ui, pressed);
         }
 
+        if(ui.browsing && ui.sources.items[ui.source_index].type==0 && ui.playlist.status==0) {
+            int network=iptvita_network_state();
+            if(network==2) {
+                iptvita_playlist_load(&ui.playlist,iptvita_network_cache_path());
+                iptvita_network_reset();
+            } else if(network<0) {
+                ui.playlist.status=network==-3?-5:network==-2?-6:-7;
+                iptvita_network_reset();
+            }
+        }
         vita2d_start_drawing();
         iptvita_ui_render(&ui);
         vita2d_end_drawing();
