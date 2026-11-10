@@ -139,6 +139,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  st.decode_error=0;
  if(rc==0)return;
  st.decoded++;
+ st.last_output_us=clock_us();
  st.decoder_phase=3;
  unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
  unsigned dst_stride=vita2d_texture_get_stride(texture);
@@ -164,6 +165,7 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  count++;
  total_bytes+=size;
  st.queued=count;
+ st.buffer_percent=count>=30?100:(int)(count*100u/30u);
 }
 void iptvita_preview_tick(void)
 {
@@ -174,6 +176,7 @@ void iptvita_preview_tick(void)
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
  st.queued=count;
+ st.buffer_percent=count>=30?100:(int)(count*100u/30u);
  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
  free(item.data);
  unsigned long long duration=33333ULL;
