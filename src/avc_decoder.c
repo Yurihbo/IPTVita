@@ -65,3 +65,38 @@ error:
  iptvita_avc_close(d);
  return ret;
 }
+
+/* Submit a single complete Annex-B access unit using the documented public
+ * AVC decoder. Callers own and retain the output buffer while decoding.
+ * The decoder may legitimately buffer frames and produce no output. */
+int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t size,
+                       uint64_t pts,int has_pts,void *rgba,size_t rgba_capacity)
+{
+ if(!d || !d->decoder_open || !bytes || !size || size>0xffffffffu || !rgba)return -1;
+ unsigned w=align16((unsigned)d->width),h=align16((unsigned)d->height);
+ if(rgba_capacity<(size_t)w*h*4u)return -2;
+ SceAvcdecAu access;
+ SceAvcdecPicture picture,*pictures[1];
+ SceAvcdecArrayPicture output;
+ memset(&access,0,sizeof(access));
+ memset(&picture,0,sizeof(picture));
+ memset(&output,0,sizeof(output));
+ access.es.pBuf=(void*)bytes;
+ access.es.size=(unsigned)size;
+ access.dts.upper=access.dts.lower=0xffffffffu;
+ access.pts.upper=has_pts?(unsigned)(pts>>32):0xffffffffu;
+ access.pts.lower=has_pts?(unsigned)pts:0xffffffffu;
+ picture.size=sizeof(picture);
+ picture.frame.pixelType=SCE_AVCDEC_PIXELFORMAT_RGBA8888;
+ picture.frame.framePitch=w;
+ picture.frame.frameWidth=w;
+ picture.frame.frameHeight=h;
+ picture.frame.opt.rgba.alpha=255;
+ picture.frame.pPicture[0]=rgba;
+ pictures[0]=&picture;
+ output.numOfElm=1;
+ output.pPicture=pictures;
+ int rc=sceAvcdecDecode(&d->ctrl,&access,&output);
+ if(rc<0)return rc;
+ return output.numOfOutput?1:0;
+}
