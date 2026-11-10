@@ -14,7 +14,7 @@
 #define CACHE_PATH "ux0:data/IPTVita/online.m3u"
 #define PACKAGED_CA_PATH "app0:cacert.pem"
 #define MAX_BYTES (4u*1024u*1024u)
-static char url_copy[4096];
+static char url_copy[8192];
 static volatile int state;
 static volatile int curl_error;
 static volatile int http_status;
