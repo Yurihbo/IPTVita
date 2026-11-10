@@ -16,7 +16,7 @@ include(FetchContent)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(iptvita_mbedtls URL https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v3.6.4.tar.gz DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_Declare(iptvita_mbedtls GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git GIT_TAG v3.6.4 GIT_SHALLOW TRUE GIT_SUBMODULES_RECURSE TRUE)
 FetchContent_MakeAvailable(iptvita_mbedtls)
 
 set(VITA_APP_NAME "IPTVita")
