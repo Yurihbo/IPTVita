@@ -4,6 +4,8 @@
    2 success, -1 network/init error, -2 HTTP error, -3 too large. */
 int iptvita_network_start(const char *url);
 int iptvita_network_state(void);
+int iptvita_network_error_code(void);
+int iptvita_network_http_status(void);
 const char *iptvita_network_cache_path(void);
 void iptvita_network_reset(void);
 #endif
