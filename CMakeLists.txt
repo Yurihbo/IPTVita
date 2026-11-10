@@ -13,7 +13,7 @@ include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
-set(VITA_VERSION "00.31")
+set(VITA_VERSION "00.32")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -24,6 +24,7 @@ add_executable(IPTVita.elf
   src/ui.c
   src/input.c
   src/sources.c
+  src/keyboard.c
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
@@ -36,6 +37,7 @@ target_link_libraries(IPTVita.elf
   vita2d
   SceCtrl_stub
   SceTouch_stub
+  SceIme_stub
   SceIofilemgr_stub
   SceDisplay_stub
   SceGxm_stub
