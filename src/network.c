@@ -1,4 +1,5 @@
 #include "network.h"
+#include "tls.h"
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
 #include <psp2/net/http.h>
@@ -87,6 +88,38 @@ static int download_thread(SceSize args,void *argp)
  if(init_network()<0) {result=-8;goto finish;}
  sceIoMkdir("ux0:data/IPTVita",0777);
  if(prepare_ca_bundle()<0) {result=-11;goto finish;}
+ if(strncmp(url_copy,"https://",8)==0) {
+  /* Separate mbedTLS transport; keep the previous cURL path for plain HTTP. */
+  SceUID certfd=sceIoOpen(PACKAGED_CA_PATH,SCE_O_RDONLY,0);
+  if(certfd<0){result=-11;goto finish;}
+  SceOff clen=sceIoLseek(certfd,0,SCE_SEEK_END);
+  if(clen<=0 || clen>1024*1024 || sceIoLseek(certfd,0,SCE_SEEK_SET)<0){
+   sceIoClose(certfd);result=-11;goto finish;
+  }
+  unsigned char *cert=malloc((size_t)clen+1);
+  unsigned char *body=malloc(MAX_BYTES+1);
+  if(!cert || !body){free(cert);free(body);sceIoClose(certfd);result=-1;goto finish;}
+  int nr=sceIoRead(certfd,cert,(unsigned int)clen);
+  sceIoClose(certfd);
+  if(nr!=(int)clen){free(cert);free(body);result=-11;goto finish;}
+  cert[clen]=0;
+  int status=0;
+  int bytes=iptvita_tls_get(url_copy,cert,(size_t)clen+1,body,MAX_BYTES,&status);
+  free(cert);
+  http_status=status;
+  curl_error=bytes<0?bytes:0;
+  if(bytes>0) {
+   SceUID output=sceIoOpen(CACHE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
+   if(output>=0) {
+    int nw=sceIoWrite(output,body,(unsigned int)bytes);
+    sceIoClose(output);
+    result=nw==bytes?2:-9;
+   }else result=-9;
+  }else result=-1;
+  free(body);
+  if(result!=2)sceIoRemove(CACHE_PATH);
+  goto finish;
+ }
  SceUID fd=sceIoOpen(CACHE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
  if(fd<0) {result=-9;goto finish;}
  CURL *curl=curl_easy_init();
@@ -97,7 +130,7 @@ static int download_thread(SceSize args,void *argp)
  curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
  curl_easy_setopt(curl,CURLOPT_CONNECTTIMEOUT,12L);
  curl_easy_setopt(curl,CURLOPT_TIMEOUT,50L);
- curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.5");
+ curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.6.0");
 #if LIBCURL_VERSION_NUM >= 0x074D00
  CURLcode ca_option=curl_easy_setopt(curl,CURLOPT_CAINFO_BLOB,&ca_blob);
  if(ca_option!=CURLE_OK) {
