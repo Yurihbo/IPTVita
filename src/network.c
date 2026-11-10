@@ -78,6 +78,7 @@ static int download_thread(SceSize args,void *argp)
  if(result!=2)sceIoRemove(CACHE_PATH);
 finish:
  state=result;
+ sceKernelExitDeleteThread(0);
  return 0;
 }
 int iptvita_network_start(const char *url)
