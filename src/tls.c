@@ -1,5 +1,8 @@
 #include "tls.h"
 #include <psp2/net/net.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
 #include <mbedtls/ssl.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
@@ -12,32 +15,33 @@ typedef struct { int socket; } VitaSocket;
 static int send_cb(void *ctx,const unsigned char *buf,size_t len)
 {
  VitaSocket *s=(VitaSocket*)ctx;
- int n=sceNetSend(s->socket,buf,len,0);
+ int n=send(s->socket,buf,len,0);
  return n<0?MBEDTLS_ERR_SSL_INTERNAL_ERROR:n;
 }
 static int recv_cb(void *ctx,unsigned char *buf,size_t len)
 {
  VitaSocket *s=(VitaSocket*)ctx;
- int n=sceNetRecv(s->socket,buf,len,0);
+ int n=recv(s->socket,buf,len,0);
  return n<0?MBEDTLS_ERR_SSL_INTERNAL_ERROR:n;
 }
 static int dial(const char *host)
 {
- struct SceNetAddrInfo hints,*res=NULL,*it;
+ struct addrinfo hints,*res=NULL,*it;
  memset(&hints,0,sizeof(hints));
- hints.ai_family=SCE_NET_AF_INET;
- hints.ai_socktype=SCE_NET_SOCK_STREAM;
- if(sceNetGetaddrinfo(host,"443",&hints,&res)!=0)return -1;
+ hints.ai_family=AF_INET;
+ hints.ai_socktype=SOCK_STREAM;
+ if(getaddrinfo(host,"443",&hints,&res)!=0)return -1;
  int sock=-1;
  for(it=res;it;it=it->ai_next) {
-  sock=sceNetSocket("iptvita_tls",it->ai_family,it->ai_socktype,it->ai_protocol);
+  sock=socket(it->ai_family,it->ai_socktype,it->ai_protocol);
   if(sock<0)continue;
-  if(sceNetConnect(sock,it->ai_addr,it->ai_addrlen)==0)break;
-  sceNetSocketClose(sock);sock=-1;
+  if(connect(sock,it->ai_addr,it->ai_addrlen)==0)break;
+  close(sock);sock=-1;
  }
- sceNetFreeaddrinfo(res);
+ freeaddrinfo(res);
  return sock;
 }
+
 int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
                     unsigned char *out,size_t capacity,int *http_code)
 {
@@ -98,7 +102,7 @@ int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
  memmove(out,body,bytes);out[bytes]=0;
  result=(int)bytes;
 done:
- if(fd>=0)sceNetSocketClose(fd);
+ if(fd>=0)close(fd);
  mbedtls_ssl_free(&ssl);mbedtls_ssl_config_free(&conf);
  mbedtls_x509_crt_free(&cert);mbedtls_ctr_drbg_free(&rng);mbedtls_entropy_free(&entropy);
  return result;
