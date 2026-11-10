@@ -34,6 +34,7 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  if(ui->stream_stage>=1 && ui->stream_stage<=3)return -2;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
+ ui->stream_http=0;ui->stream_net_error=0;
  int ts=strstr(url,".ts")!=NULL && !strstr(url,".m3u8");
  int result=schedule(ui,url,ts?3:1);
  if(result<0)fail(ui,result);
@@ -93,13 +94,16 @@ void iptvita_stream_poll(IptvitaUi *ui)
  if(!ui || ui->stream_stage<1 || ui->stream_stage>3)return;
  int net=iptvita_network_state();
  if(net==1 || net==0)return;
+ int err=iptvita_network_error_code();
+ ui->stream_http=iptvita_network_http_status();
+ ui->stream_net_error=err;
+ /* Reset the finished request BEFORE scheduling another one. Resetting
+  * afterwards could erase a newly completed worker's status. */
+ iptvita_network_reset();
  if(net!=2) {
-  int err=iptvita_network_error_code();
-  fail(ui,err?err:-11);
-  iptvita_network_reset();
+  fail(ui,err?err:(ui->stream_http ? -20 : -11));
   return;
  }
  if(ui->stream_stage==3)inspect_ts(ui);
  else inspect_playlist(ui);
- iptvita_network_reset();
 }
