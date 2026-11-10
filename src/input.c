@@ -15,6 +15,7 @@ static void open_page(IptvitaUi *ui, int page)
     ui->nav_index=page;
     ui->focus_content=(page==IPTVITA_SOURCES || page==IPTVITA_SETTINGS);
     ui->show_dialog=0;
+    ui->browsing=0;
 }
 static char *field(IptvitaUi *ui, size_t *cap)
 {
@@ -90,6 +91,13 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         if(pressed&(SCE_CTRL_CROSS|SCE_CTRL_CIRCLE)) ui->show_dialog=0;
         return 0;
     }
+    if(ui->browsing) {
+        if(pressed&SCE_CTRL_CIRCLE) {ui->browsing=0;return 0;}
+        if((pressed&SCE_CTRL_UP) && ui->channel_index>0) --ui->channel_index;
+        if((pressed&SCE_CTRL_DOWN) && ui->channel_index+1<ui->playlist.count) ++ui->channel_index;
+        if(pressed&SCE_CTRL_CROSS) ui->save_status=5; /* playback not implemented */
+        return 0;
+    }
     if(pressed&SCE_CTRL_START) { ui->quit_confirm=1; return 0; }
     if(ui->page==IPTVITA_SOURCES && (pressed&SCE_CTRL_SELECT)) {
         ui->list_mode=!ui->list_mode;
@@ -100,7 +108,17 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
     if(ui->page==IPTVITA_SOURCES && ui->list_mode && ui->focus_content) {
         if(pressed&SCE_CTRL_UP && ui->list_index>0) --ui->list_index;
         if(pressed&SCE_CTRL_DOWN && ui->list_index+1<(int)ui->sources.count) ++ui->list_index;
-        if((pressed&SCE_CTRL_CROSS) && ui->sources.count)
+        if((pressed&SCE_CTRL_CROSS) && ui->sources.count) {
+            ui->source_index=ui->list_index;
+            ui->channel_index=0;
+            ui->save_status=0;
+            int type=(int)ui->sources.items[ui->source_index].type;
+            if(type==3) {
+                iptvita_playlist_load(&ui->playlist,ui->sources.items[ui->source_index].url);
+                ui->browsing=1;
+            } else ui->save_status=6; /* remote fetch next milestone */
+        }
+        if((pressed&SCE_CTRL_RTRIGGER) && ui->sources.count)
             begin_edit(ui,ui->list_index,0);
         if((pressed&SCE_CTRL_SQUARE) && ui->sources.count) {
             iptvita_sources_remove(&ui->sources,(unsigned int)ui->list_index);
