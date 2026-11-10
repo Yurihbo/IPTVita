@@ -3,7 +3,7 @@
 A new, independent IPTV player for PlayStation Vita and PlayStation TV.
 
 **Author:** Yurihbo  
-**Status:** Stage 2 — UI preview (`v0.2.0`)
+**Status:** Stage 3 — local source manager (`v0.3.0`)
 
 IPTVita is being developed from new source code in C with VitaSDK. It does not include the source code or assets of Vita IPTV. The other application is used as a functional and technical reference only.
 
@@ -47,3 +47,17 @@ On GitHub, open **Actions → Build IPTVita VPK → latest successful run → Ar
 Copyright (c) 2026 Yurihbo. Licensed under the MIT License — see [LICENSE](LICENSE).
 
 Third-party components added in future stages will keep their own notices and licenses.
+
+## Stage 3 source manager (v0.3)
+
+The **Sources** screen offers four source types: M3U/M3U8 URL, Xtream Codes, direct stream URL and local M3U path. Use **X** on a type to create an entry, or **SELECT** to toggle the saved-source list. In the saved list, **X** edits and **Triangle** deletes an entry. The application supports up to 16 entries and URLs up to 4095 characters.
+
+The stage-3 editor is a lightweight, controller-operated character grid:
+- D-pad: choose character; X: append; Triangle: backspace
+- L/R: switch fields (Name, URL/Path, and Xtream username/password)
+- Square: save; Circle: cancel
+
+Entries are stored locally in `ux0:data/IPTVita/sources.bin`. No passwords are uploaded by this stage, but Xtream passwords are stored **unencrypted on the memory card**; do not use sensitive passwords. Local file entries are stored as paths, not opened yet. No playlists are fetched or parsed, and **no video playback is included** in stage 3.
+
+### Planned favorites behavior
+When video playback is implemented, **START while watching a channel** will toggle its favorite status. Each playlist will have its own **Favorites** tab, with favorites stored by source identity and channel identity. START in menus retains the exit confirmation; playback will have its own controller context. This is planned, not yet implemented.
