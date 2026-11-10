@@ -296,11 +296,13 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         if(ui->stream_stage) {
             char line[120];
             snprintf(line,sizeof(line),"HLS ETAPA %d  STATUS %d",ui->stream_stage,ui->stream_status);
-            label(265,400,line,2,p.white);
+            label(265,388,line,2,p.white);
             snprintf(line,sizeof(line),"TS %u  NAL %u  AU %u  PID %d",ui->stream_packets,ui->stream_nals,ui->stream_frames,ui->stream_video_pid);
-            label(265,432,line,2,p.accent);
+            label(265,417,line,2,p.accent);
+            snprintf(line,sizeof(line),"HTTP %d  TLS/NET %d",ui->stream_http,ui->stream_net_error);
+            label(265,446,line,2,p.muted);
         }
-        if(ui->player_probe_result) {
+        if(ui->player_probe_result && !ui->stream_stage) {
             char probe[80];
             snprintf(probe,sizeof(probe),"%s: %d (0x%08X)",ui->player_probe_target==2?"MP4 LOCAL":"STREAM",ui->player_probe_result,(unsigned int)ui->player_probe_result);
             label(265,404,probe,2,p.white);
