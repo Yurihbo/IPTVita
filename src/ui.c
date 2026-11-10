@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "network.h"
+#include "video_preview.h"
 #include <vita2d.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -288,6 +289,17 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         heading(ui->page,p,tr(ui,"DETALHES DO CANAL","CHANNEL DETAILS"),
                 tr(ui,"O VOLTAR","O BACK"));
         clipped(265,155,ch->name,40,3,p.white);
+        if(ui->stream_decoded_frames) {
+            rect(272,190,640,310,RGBA8(0,0,0,255));
+            iptvita_preview_draw(272,190,640,310);
+            if(!ui->stream_info_visible)return;
+            rect(272,388,640,105,RGBA8(8,20,33,225));
+            char details[120];
+            snprintf(details,sizeof(details),"%dx%d  FRAMES %u  DECODE %d",ui->stream_video_width,ui->stream_video_height,ui->stream_decoded_frames,ui->stream_decode_error);
+            label(290,406,details,2,p.white);
+            label(290,446,tr(ui,"R1 OCULTAR INFO  /  O VOLTAR","R1 HIDE INFO  /  O BACK"),2,p.accent);
+            return;
+        }
         const char *url=ch->url;
         const char *kind=strstr(url,".m3u8")?"HLS (.m3u8)":
                          strstr(url,".mp4")?"MP4":strstr(url,".ts")?"MPEG-TS":"FORMATO A IDENTIFICAR";
@@ -310,6 +322,8 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
             label(265,417,line,2,p.accent);
             snprintf(line,sizeof(line),"HTTP %d  TLS/NET %d",ui->stream_http,ui->stream_net_error);
             label(265,446,line,2,p.muted);
+            snprintf(line,sizeof(line),"VIDEO %u  DECODE %d",ui->stream_decoded_frames,ui->stream_decode_error);
+            label(265,472,line,2,p.accent);
         }
         if(ui->stream_info_visible && ui->player_probe_result && !ui->stream_stage) {
             char probe[80];
