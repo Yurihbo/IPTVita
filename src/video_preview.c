@@ -56,7 +56,13 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   }
   if(w>1280 || h>720){st.decode_error=-30;return;}
   int rc=iptvita_avc_open(&dec,w,h,reference_frames);
-  if(rc<0){st.decode_error=rc;return;}
+  if(rc<0){
+   st.decode_error=rc;
+   st.width=w;st.height=h;
+   st.decoder_phase=1;
+   return;
+  }
+  st.decoder_phase=2;
   size_t stride=(size_t)((w+15)&~15);
   size_t lines=(size_t)((h+15)&~15);
   size_t needed=stride*lines*4u;
@@ -83,6 +89,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size);
  if(rc<0) {
   st.decode_error=rc;
+  st.decoder_phase=2;
   unsigned error=(unsigned)rc;
   if((error==0x80620009u || error==0x80620007u ||
       error==0x80620809u || error==0x80620807u) &&
@@ -104,6 +111,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  st.decode_error=0;
  if(rc==0)return;
  st.decoded++;
+ st.decoder_phase=3;
  unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
  unsigned dst_stride=vita2d_texture_get_stride(texture);
  unsigned src_stride=(unsigned)((st.width+15)&~15)*4u;
