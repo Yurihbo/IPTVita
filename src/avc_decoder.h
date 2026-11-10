@@ -13,6 +13,7 @@ typedef struct {
  unsigned picture_count,slot;
  size_t es_capacity;
  int library_open,decoder_open;
+ int disable_pts, pts_retries;
  int width,height;
 } IptvitaAvcDecoder;
 /* First native H.264 decoder backend: supports up to 1280x720 using
