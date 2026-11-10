@@ -42,7 +42,8 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
    if(n>=sizeof(ref))return -3;
    size_t k=n;
    memcpy(ref,s,k);ref[k]=0;
-   if(!out->first_media[0] && resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
+   if((out->is_master ? !out->first_media[0] : 1) &&
+      resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
    if(expect_variant){++out->variants;expect_variant=0;}
    else ++out->segments;
   }
