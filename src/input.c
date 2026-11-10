@@ -72,7 +72,7 @@ static void editor_input(IptvitaUi *ui,unsigned int pressed)
         if(ui->grid_keyboard) {
             if(n+1<cap) { dst[n]=keys[ui->keyboard_index]; dst[n+1]=0; }
         } else {
-            int result=iptvita_keyboard_edit(dst,cap,ui->edit_field==1,ui->edit_field==3,ui->language);
+            int result=iptvita_keyboard_begin(dst,cap,ui->edit_field==1,ui->edit_field==3,ui->language);
             if(result==-1) ui->grid_keyboard=1; /* IME unavailable or text too long */
         }
     }
