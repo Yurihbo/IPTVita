@@ -15,7 +15,7 @@ find_package(OpenSSL REQUIRED)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
-set(VITA_VERSION "00.56")
+set(VITA_VERSION "00.57")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -29,6 +29,7 @@ add_executable(IPTVita.elf
   src/keyboard.c
   src/playlist.c
   src/network.c
+  src/player.c
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
@@ -48,6 +49,7 @@ target_link_libraries(IPTVita.elf
   SceNetCtl_stub
   SceHttp_stub
   SceSsl_stub
+  SceAvPlayer_stub
   SceDisplay_stub
   SceGxm_stub
   SceSysmodule_stub
