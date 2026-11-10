@@ -6,6 +6,7 @@
 #define IPTVITA_NAV_COUNT 4
 #define IPTVITA_SOURCE_COUNT 4
 #include "sources.h"
+#include "playlist.h"
 
 typedef enum {
     IPTVITA_HOME = 0,
@@ -25,6 +26,10 @@ typedef struct {
     int show_dialog;
     int quit_confirm;
     int list_mode;
+    int browsing;
+    int channel_index;
+    int source_index;
+    IptvitaPlaylist playlist;
     int list_index;
     int editing;
     int edit_index;
