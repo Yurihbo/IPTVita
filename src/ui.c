@@ -1,6 +1,8 @@
 #include "ui.h"
 #include <vita2d.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 
 #define C(r,g,b) RGBA8(r,g,b,255)
 
@@ -143,7 +145,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.2",2,p.muted);
+    label(24,511,"IPTVITA  V0.3",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -163,14 +165,83 @@ static void home(const IptvitaUi *ui, Palette p)
     label(280,241,tr(ui,"ABRA FONTES PARA CONTINUAR","OPEN SOURCES TO CONTINUE"),2,p.accent);
     rect(252,299,324,146,p.raised);
     rect(595,299,329,146,p.raised);
-    label(277,327,"0",7,p.white);
+    char total[16]; snprintf(total,sizeof(total),"%u",ui->sources.count);
+    label(277,327,total,7,p.white);
     label(278,395,tr(ui,"FONTES SALVAS","SAVED SOURCES"),2,p.muted);
     label(617,338,"HLS  AES-128",3,p.white);
     label(617,387,tr(ui,"PREVISTO NA ETAPA 4","PLANNED FOR STAGE 4"),2,p.muted);
     label(252,488,tr(ui,"L/R TELAS  /  X SELECIONAR  /  START SAIR","L/R SWITCH  /  X SELECT  /  START EXIT"),2,p.muted);
 }
+static void clipped(int x,int y,const char *value,int maxchars,int scale,unsigned int color)
+{
+    char visible[80];
+    int n=0;
+    while(value[n] && n<maxchars && n<(int)sizeof(visible)-1) {
+        visible[n]=value[n]; ++n;
+    }
+    visible[n]=0;
+    label(x,y,visible,scale,color);
+}
+static void editor(const IptvitaUi *ui, Palette p)
+{
+    static const char *fields_pt[]={"NOME","ENDERECO URL","USUARIO","SENHA"};
+    static const char *fields_en[]={"NAME","URL ADDRESS","USERNAME","PASSWORD"};
+    static const char keyboard[]="abcdefghijklmnopqrstuvwxyz0123456789:/._-?&=%+@#";
+    const char **names=ui->language?fields_en:fields_pt;
+    const char *value=ui->edit_field==0?ui->draft.name:
+                      ui->edit_field==1?ui->draft.url:
+                      ui->edit_field==2?ui->draft.username:ui->draft.password;
+    int n=(int)strlen(value);
+    heading(ui->page,p,tr(ui,"EDITAR FONTE","EDIT SOURCE"),
+            tr(ui,"TECLADO PELO CONTROLE","CONTROLLER KEYBOARD"));
+    rect(252,130,672,122,p.surface);
+    label(271,146,names[ui->edit_field],3,p.accent);
+    label(271,190,tr(ui,"CARACTERES","CHARACTERS"),2,p.muted);
+    char count[24]; snprintf(count,sizeof(count),"%d",n);
+    label(424,190,count,2,p.muted);
+    /* Show the tail of long URLs; the complete value remains stored. */
+    const char *tail=value+(n>45?n-45:0);
+    clipped(271,216,tail,45,2,p.white);
+    for(int i=0;i<(int)(sizeof(keyboard)-1);++i) {
+        int x=263+(i%11)*59, y=273+(i/11)*36;
+        int active=i==ui->keyboard_index;
+        rect(x,y,49,30,active?p.selected:p.raised);
+        if(active)stroke(x,y,49,30,p.accent);
+        char key[2]={keyboard[i],0};
+        label(x+15,y+7,key,3,active?p.white:p.muted);
+    }
+    label(253,473,tr(ui,"X DIGITAR  /  TRI APAGAR  /  L/R CAMPO",
+                          "X TYPE  /  TRI DELETE  /  L/R FIELD"),2,p.muted);
+    label(253,503,tr(ui,"QUADRADO SALVAR  /  O CANCELAR",
+                          "SQUARE SAVE  /  O CANCEL"),2,p.accent);
+    if(ui->save_status==2) label(605,146,tr(ui,"NOME E URL OBRIGATORIOS","NAME AND URL REQUIRED"),2,p.accent);
+}
+static void saved_sources(const IptvitaUi *ui, Palette p)
+{
+    heading(ui->page,p,tr(ui,"FONTES SALVAS","SAVED SOURCES"),
+            tr(ui,"X EDITAR  /  TRI EXCLUIR  /  SELECT ADICIONAR",
+                          "X EDIT  /  TRI DELETE  /  SELECT ADD"));
+    if(!ui->sources.count)
+        label(267,164,tr(ui,"NENHUMA FONTE SALVA","NO SOURCES SAVED"),3,p.muted);
+    for(unsigned int i=0;i<ui->sources.count && i<7;++i) {
+        int y=131+(int)i*45;
+        int active=(int)i==ui->list_index;
+        rect(252,y,672,39,active?p.selected:p.surface);
+        if(active) rect(252,y,4,39,p.accent);
+        clipped(271,y+10,ui->sources.items[i].name,27,2,p.white);
+        const char *types[]={"M3U","XTREAM","DIRETO","LOCAL"};
+        label(795,y+10,types[ui->sources.items[i].type],2,p.muted);
+    }
+    if(ui->sources.count>7) {
+        label(252,458,tr(ui,"MOSTRANDO AS 7 PRIMEIRAS","SHOWING FIRST 7"),2,p.muted);
+    }
+    if(ui->save_status==1) label(252,491,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
+    if(ui->save_status==4) label(252,491,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
+}
+
 static void sources(const IptvitaUi *ui, Palette p)
 {
+    if(ui->list_mode) { saved_sources(ui,p); return; }
     static const char *names_pt[]={"M3U / M3U8","XTREAM CODES","LINK DIRETO","M3U LOCAL"};
     static const char *names_en[]={"M3U / M3U8","XTREAM CODES","DIRECT STREAM","LOCAL M3U"};
     static const char *details_pt[]={"URL DA LISTA","SERVIDOR / USUARIO / SENHA","URL DO VIDEO","ARQUIVO NO CARTAO"};
@@ -188,7 +259,7 @@ static void sources(const IptvitaUi *ui, Palette p)
         label(x+18,y+69,names[i],3,p.white);
         label(x+18,y+105,details[i],2,p.muted);
     }
-    label(252,476,tr(ui,"X PREVIA  /  ESQUERDA MENU  /  O VOLTAR","X PREVIEW  /  LEFT MENU  /  O BACK"),2,p.muted);
+    label(252,476,tr(ui,"X ADICIONAR  /  SELECT LISTA SALVA  /  O VOLTAR","X ADD  /  SELECT SAVED LIST  /  O BACK"),2,p.muted);
 }
 static void settings(const IptvitaUi *ui, Palette p)
 {
@@ -226,7 +297,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.2.1 / PREVIA","VERSION 0.2.1 / UI PREVIEW"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.3.0 / FONTES","VERSION 0.3.0 / SOURCES"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
@@ -260,5 +331,8 @@ void iptvita_ui_render(const IptvitaUi *ui)
         case IPTVITA_ABOUT: about(ui,p); break;
         default: home(ui,p); break;
     }
-    if (ui->show_dialog || ui->quit_confirm) dialog(ui,p);
+    if (ui->editing) {
+        rect(222,0,738,544,p.bg);
+        editor(ui,p);
+    } else if (ui->show_dialog || ui->quit_confirm) dialog(ui,p);
 }
