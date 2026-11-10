@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "network.h"
 #include "video_preview.h"
+#include "aac_audio.h"
 #include <vita2d.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -442,6 +443,27 @@ static void dialog(const IptvitaUi *ui, Palette p)
 void iptvita_ui_render(const IptvitaUi *ui)
 {
     Palette p=palette(ui->theme);
+    if(ui->browsing && ui->channel_details && ui->stream_decoded_frames>0) {
+        vita2d_clear_screen();
+        rect(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,RGBA8(0,0,0,255));
+        iptvita_preview_draw(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT);
+        if(ui->stream_info_visible) {
+            rect(0,0,IPTVITA_WIDTH,87,RGBA8(8,20,33,224));
+            const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
+            clipped(25,17,ch->name,55,3,p.white);
+            char details[130];
+            snprintf(details,sizeof(details),"%dx%d  H264  VIDEO %u  AUDIO AAC",ui->stream_video_width,ui->stream_video_height,ui->stream_decoded_frames);
+            label(26,56,details,2,p.accent);
+            rect(0,445,IPTVITA_WIDTH,99,RGBA8(8,20,33,224));
+            IptvitaAudioStats audio=iptvita_audio_stats();
+            snprintf(details,sizeof(details),"HTTP %d / VIDEO %d / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_decode_error,audio.played,audio.error);
+            label(25,463,details,2,p.white);
+            label(25,505,ui->stream_paused?
+                  tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
+                  tr(ui,"X PAUSAR  R1 OCULTAR INFO  O VOLTAR","X PAUSE  R1 HIDE INFO  O BACK"),2,p.accent);
+        }
+        return;
+    }
     vita2d_clear_screen();
     rect(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,p.bg);
     sidebar(ui,p);
