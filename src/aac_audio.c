@@ -6,8 +6,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define FIFO 256
-#define PREBUFFER 48
+#define FIFO 384
+#define PREBUFFER 72
 #define MAX_ADTS 8192
 static const int rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
 typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];} Frame;
