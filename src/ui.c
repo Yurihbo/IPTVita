@@ -300,8 +300,9 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         char url_info[64];
         snprintf(url_info,sizeof(url_info),"URL: %u / 8191 BYTES",(unsigned)url_len);
         label(265,311,url_info,2,p.muted);
-        label(265,365,tr(ui,"TRI TESTAR HLS / QUAD MP4 LOCAL","TRI TEST HLS / SQUARE LOCAL MP4"),2,p.accent);
-        if(ui->stream_stage) {
+        label(265,354,tr(ui,"TRI TESTAR HLS / QUAD MP4 LOCAL","TRI TEST HLS / SQUARE LOCAL MP4"),2,p.accent);
+        label(265,375,tr(ui,"R1 MOSTRAR / OCULTAR INFO","R1 SHOW / HIDE INFO"),2,p.muted);
+        if(ui->stream_info_visible && ui->stream_stage) {
             char line[120];
             snprintf(line,sizeof(line),"HLS ETAPA %d  STATUS %d",ui->stream_stage,ui->stream_status);
             label(265,388,line,2,p.white);
@@ -310,7 +311,7 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
             snprintf(line,sizeof(line),"HTTP %d  TLS/NET %d",ui->stream_http,ui->stream_net_error);
             label(265,446,line,2,p.muted);
         }
-        if(ui->player_probe_result && !ui->stream_stage) {
+        if(ui->stream_info_visible && ui->player_probe_result && !ui->stream_stage) {
             char probe[80];
             snprintf(probe,sizeof(probe),"%s: %d (0x%08X)",ui->player_probe_target==2?"MP4 LOCAL":"STREAM",ui->player_probe_result,(unsigned int)ui->player_probe_result);
             label(265,404,probe,2,p.white);
