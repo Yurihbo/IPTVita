@@ -89,6 +89,17 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  st.submitted++;
  int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size);
  if(rc<0) {
+  /* A damaged live unit is not necessarily a fatal decoder failure.
+   * 0x8062000D means invalid bitstream; skip and await the next IDR.
+   * 0x8062000A means busy/full; don't lock the player on one AU. */
+  if((unsigned)rc==0x8062000Du || (unsigned)rc==0x8062000Au) {
+   st.dropped++;
+   if((unsigned)rc==0x8062000Du) {
+    wait_for_idr=1;
+    st.waiting_for_idr=1;
+   }
+   return;
+  }
   st.decode_error=rc;
   st.decoder_phase=2;
   unsigned error=(unsigned)rc;
