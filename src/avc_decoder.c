@@ -140,8 +140,8 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  access.es.pBuf=d->es_data;
  access.es.size=(unsigned)size;
  access.dts.upper=access.dts.lower=0xffffffffu;
- access.pts.upper=has_pts?(unsigned)(pts>>32):0xffffffffu;
- access.pts.lower=has_pts?(unsigned)pts:0xffffffffu;
+ access.pts.upper=(has_pts && !d->disable_pts)?(unsigned)(pts>>32):0xffffffffu;
+ access.pts.lower=(has_pts && !d->disable_pts)?(unsigned)pts:0xffffffffu;
  /* Public AVC API is designed for a small output picture array (up to 2);
   * passing all eight allocated slots in one call can exhaust codec state. */
  const unsigned outputs=d->picture_count>=2?2:1;
@@ -159,6 +159,17 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  output.numOfElm=outputs;
  output.pPicture=pictures;
  int rc=sceAvcdecDecode(&d->ctrl,&access,&output);
+ /* Some Vita AVC firmware rejects otherwise valid transport PTS.
+  * Retry exactly once with the documented unknown timestamp sentinel. */
+ if((unsigned)rc==0x80620002u || (unsigned)rc==0x80620802u) {
+  if(!d->disable_pts && has_pts) {
+   d->disable_pts=1;
+   d->pts_retries++;
+   access.pts.upper=access.pts.lower=0xffffffffu;
+   output.numOfOutput=0;
+   rc=sceAvcdecDecode(&d->ctrl,&access,&output);
+  }
+ }
  /* The codec may retain an output slot even while returning zero pictures.
   * Rotate submitted slots on every AU, not just successful output. */
  d->slot=(d->slot+outputs)%d->picture_count;
