@@ -9,6 +9,7 @@ typedef struct {
  SceUID frame_uid;
  SceUID es_uid;
  SceUID picture_uid[8];
+ unsigned char picture_mapped[8];
  unsigned char *es_data,*picture_data[8];
  unsigned picture_count,slot;
  size_t es_capacity;
