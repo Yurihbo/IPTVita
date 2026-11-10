@@ -6,8 +6,9 @@
 typedef struct {
  IptvitaTsPipeline transport;
  IptvitaPesAssembler video_pes;
+ IptvitaPesAssembler audio_pes;
  IptvitaH264Au video_au;
- int video_pid;
+ int video_pid,audio_pid;
  int active;
  IptvitaAuSink sink;
  void *user;
