@@ -10,6 +10,9 @@ typedef struct {
  int has_vcl,has_idr,has_pts;
  uint64_t pts;
  unsigned units,frames,dropped;
+ /* Keep the most recent codec parameter sets across HLS/PES boundaries. */
+ unsigned char sps[1024],pps[1024];
+ size_t sps_size,pps_size;
  IptvitaAuSink sink;
  void *user;
 } IptvitaH264Au;
