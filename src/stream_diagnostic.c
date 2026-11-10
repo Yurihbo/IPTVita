@@ -4,10 +4,20 @@
 #include "video_pipeline.h"
 #include "video_preview.h"
 #include <psp2/io/fcntl.h>
+#include <psp2/kernel/processmgr.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+static IptvitaVideoPipeline pipeline;
+static int pipeline_open;
+static unsigned long long now_us(void) {return (unsigned long long)sceKernelGetProcessTimeWide();}
+static void close_pipeline(void)
+{
+ if(!pipeline_open)return;
+ iptvita_video_close(&pipeline);
+ pipeline_open=0;
+}
 static void count_frame(void *user,const unsigned char *data,size_t size,
                         uint64_t pts,int has_pts,int keyframe)
 {
@@ -32,7 +42,10 @@ static int schedule(IptvitaUi *ui,const char *url,int stage)
 int iptvita_stream_start(IptvitaUi *ui,const char *url)
 {
  if(!ui || !url || !url[0])return -1;
- if(ui->stream_stage>=1 && ui->stream_stage<=3)return -2;
+ if((ui->stream_stage>=1 && ui->stream_stage<=3) || ui->stream_stage==5)return -2;
+ close_pipeline();
+ ui->stream_paused=0;ui->stream_media_url[0]=0;
+ ui->stream_last_segment[0]=0;ui->stream_refresh_at=0;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
  ui->stream_decode_error=0;ui->stream_decoded_frames=0;
@@ -66,8 +79,16 @@ static void inspect_playlist(IptvitaUi *ui)
  free(info);
  if(!next[0]){fail(ui,-14);return;}
  int stage=master?2:3;
- /* Stop variant recursion; playlist -> master -> media segment only. */
  if(ui->stream_stage==2 && master){fail(ui,-14);return;}
+ if(!master) {
+  strncpy(ui->stream_media_url,ui->stream_url,sizeof(ui->stream_media_url)-1);
+  ui->stream_media_url[sizeof(ui->stream_media_url)-1]=0;
+  if(strcmp(next,ui->stream_last_segment)==0) {
+   ui->stream_stage=5;
+   ui->stream_refresh_at=now_us()+1500000ULL;
+   return;
+  }
+ }
  rc=schedule(ui,next,stage);
  if(rc<0)fail(ui,rc);
 }
@@ -75,32 +96,51 @@ static void inspect_ts(IptvitaUi *ui)
 {
  SceUID fd=sceIoOpen(iptvita_network_cache_path(),SCE_O_RDONLY,0);
  if(fd<0){fail(ui,-15);return;}
- IptvitaVideoPipeline *v=(IptvitaVideoPipeline*)malloc(sizeof(*v));
- if(!v){sceIoClose(fd);fail(ui,-17);return;}
- if(iptvita_video_open(v,count_frame,ui)<0){free(v);sceIoClose(fd);fail(ui,-17);return;}
+ if(!pipeline_open) {
+  if(iptvita_video_open(&pipeline,count_frame,ui)<0) {
+   sceIoClose(fd);fail(ui,-17);return;
+  }
+  pipeline_open=1;
+ }
  unsigned char chunk[188*64];
  int bytes=0;
  while((bytes=sceIoRead(fd,chunk,sizeof(chunk)))>0) {
   if(bytes%188) {fail(ui,-16);break;}
-  if(iptvita_video_feed(v,chunk,(size_t)bytes)<0){fail(ui,-17);break;}
+  if(iptvita_video_feed(&pipeline,chunk,(size_t)bytes)<0){fail(ui,-17);break;}
  }
  if(bytes<0 && ui->stream_stage==3)fail(ui,-15);
- ui->stream_packets=v->transport.packets;
- ui->stream_nals=v->transport.h264_nal_units;
- ui->stream_video_pid=v->transport.video_pid;
- iptvita_video_close(v);
+ if(ui->stream_stage==3 && pipeline.video_pid>=0) {
+  iptvita_pes_flush(&pipeline.video_pes);
+  iptvita_h264_au_flush(&pipeline.video_au);
+ }
+ ui->stream_packets=pipeline.transport.packets;
+ ui->stream_nals=pipeline.transport.h264_nal_units;
+ ui->stream_video_pid=pipeline.transport.video_pid;
  IptvitaPreviewStats stats=iptvita_preview_stats();
  ui->stream_decode_error=stats.decode_error;
  ui->stream_decoded_frames=stats.decoded;
  ui->stream_video_width=stats.width;
  ui->stream_video_height=stats.height;
- free(v);
  sceIoClose(fd);
- if(ui->stream_stage==3)ui->stream_stage=ui->stream_packets?4:-16;
+ if(ui->stream_stage==3) {
+  strncpy(ui->stream_last_segment,ui->stream_url,sizeof(ui->stream_last_segment)-1);
+  ui->stream_last_segment[sizeof(ui->stream_last_segment)-1]=0;
+  ui->stream_stage=5;
+  ui->stream_refresh_at=now_us()+1500000ULL;
+ }
 }
 void iptvita_stream_poll(IptvitaUi *ui)
 {
- if(!ui || ui->stream_stage<1 || ui->stream_stage>3)return;
+ if(!ui)return;
+ if(ui->stream_stage==5) {
+  if(!ui->stream_paused && ui->stream_media_url[0] &&
+     now_us()>=ui->stream_refresh_at) {
+   int rc=schedule(ui,ui->stream_media_url,2);
+   if(rc<0)fail(ui,rc);
+  }
+  return;
+ }
+ if(ui->stream_stage<1 || ui->stream_stage>3)return;
  int net=iptvita_network_state();
  if(net==1 || net==0)return;
  int err=iptvita_network_error_code();
