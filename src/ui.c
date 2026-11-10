@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "network.h"
 #include <vita2d.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -158,7 +159,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.5.1",2,p.muted);
+    label(24,511,"IPTVITA  V0.5.2",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -243,14 +244,25 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
             ui->playlist.status==-4?"CAMINHO LOCAL INVALIDO":
             ui->playlist.status==-5?"PLAYLIST MAIOR QUE 4 MB":
             ui->playlist.status==-6?"ERRO HTTP DO SERVIDOR":
-            ui->playlist.status==-7?"FALHA DE REDE OU HTTPS":"LIMITE DE CANAIS";
+            ui->playlist.status==-7?"FALHA DE REDE OU HTTPS":
+            ui->playlist.status==-8?"ERRO AO INICIAR REDE":
+            ui->playlist.status==-9?"ERRO AO ABRIR CACHE":
+            ui->playlist.status==-10?"ERRO AO INICIAR CURL":"LIMITE DE CANAIS";
         const char *en=ui->playlist.status==-1?"FILE READ ERROR":
             ui->playlist.status==-2?"INVALID OR EMPTY M3U":
             ui->playlist.status==-4?"INVALID LOCAL PATH":
             ui->playlist.status==-5?"PLAYLIST EXCEEDS 4 MB":
             ui->playlist.status==-6?"HTTP SERVER ERROR":
-            ui->playlist.status==-7?"NETWORK OR HTTPS ERROR":"CHANNEL LIMIT";
+            ui->playlist.status==-7?"NETWORK OR HTTPS ERROR":
+            ui->playlist.status==-8?"NETWORK INITIALIZATION ERROR":
+            ui->playlist.status==-9?"CACHE FILE OPEN ERROR":
+            ui->playlist.status==-10?"CURL INITIALIZATION ERROR":"CHANNEL LIMIT";
         label(263,150,ui->language?en:pt,3,p.accent);
+        if(ui->playlist.status==-7 || ui->playlist.status==-6) {
+            char detail[80];
+            snprintf(detail,sizeof(detail),"CURL: %d  HTTP: %d",iptvita_network_error_code(),iptvita_network_http_status());
+            label(263,195,detail,3,p.white);
+        }
     }
     char count[40];snprintf(count,sizeof(count),"%d CANAIS",ui->playlist.count);
     label(264,117,count,2,p.muted);
@@ -351,7 +363,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.5.1 / M3U ONLINE","VERSION 0.5.1 / ONLINE M3U"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.5.2 / M3U ONLINE","VERSION 0.5.2 / ONLINE M3U"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
