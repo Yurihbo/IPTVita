@@ -59,6 +59,26 @@ static void pes_start(IptvitaTsPipeline *p,const unsigned char *data,size_t n,in
  if(video){p->last_video_pts=pts;p->video_pts_valid=1;}
  else {p->last_audio_pts=pts;p->audio_pts_valid=1;}
 }
+static void h264_scan(IptvitaTsPipeline *p,const unsigned char *data,size_t n)
+{
+ /* Detect Annex-B start codes across TS packet boundaries. This is inspection
+  * only; the future decoder requires complete access-unit assembly. */
+ for(size_t i=0;i<n;i++) {
+  unsigned char b=data[i];
+  if(p->video_tail_len>=3 && p->video_tail[0]==0 && p->video_tail[1]==0 &&
+     p->video_tail[2]==1) {
+   unsigned type=b&31;
+   if(type>0 && type<24) {
+    p->h264_nal_units++;
+    if(type==7)p->h264_sps++;
+    if(type==8)p->h264_pps++;
+    if(type==5)p->h264_idr++;
+   }
+  }
+  if(p->video_tail_len<3)p->video_tail[p->video_tail_len++]=b;
+  else {p->video_tail[0]=p->video_tail[1];p->video_tail[1]=p->video_tail[2];p->video_tail[2]=b;}
+ }
+}
 int iptvita_ts_feed(IptvitaTsPipeline *p,const unsigned char *data,size_t size)
 {
  if(!p || !data || size%188)return -1;
@@ -78,6 +98,14 @@ int iptvita_ts_feed(IptvitaTsPipeline *p,const unsigned char *data,size_t size)
   if(!(adapt&1) || pos>=188)continue;
   if(pid==p->video_pid)p->video_packets++;
   if(pid==p->audio_pid)p->audio_packets++;
+  if(pid==p->video_pid) {
+   size_t skip=0;
+   if((ts[1]&0x40) && 188-pos>=9 && ts[pos]==0 && ts[pos+1]==0 && ts[pos+2]==1) {
+    skip=9+(size_t)ts[pos+8];
+    if(skip>188-pos)skip=188-pos;
+   }
+   h264_scan(p,ts+pos+skip,188-pos-skip);
+  }
   if(ts[1]&0x40) {
    if(pid==p->video_pid)pes_start(p,ts+pos,188-pos,1);
    if(pid==p->audio_pid)pes_start(p,ts+pos,188-pos,0);
