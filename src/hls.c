@@ -18,7 +18,8 @@ static int resolve(const char *base,const char *ref,char *out,size_t cap)
  n=snprintf(out,cap,"%.*s%s",(int)(slash-base),base,ref);
  return n>=0 && (size_t)n<cap?0:-1;
 }
-int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
+int iptvita_hls_inspect_next(const char *text,const char *base,IptvitaHlsInfo *out,
+                             unsigned long long last_sequence,int have_previous)
 {
  if(!text || !base || !out) return -1;
  memset(out,0,sizeof(*out));
@@ -110,22 +111,34 @@ int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
    } else {
     unsigned long long segment_number=sequence+(unsigned long long)out->segments;
     ++out->segments;
-    if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
-    out->cipher_method=method;
-    out->encrypted=method!=0;
-    out->iv_explicit=has_iv;
-    memcpy(out->iv,current_iv,16);
-    if(method==1 && !has_iv) {
-     for(int byte=15;byte>=8;byte--) {
-      out->iv[byte]=(unsigned char)(segment_number&255);
-      segment_number>>=8;
+    /* On initial tune-in, use newest segment. Afterwards consume each
+     * numbered segment in order so audio and video are not skipped. */
+    int select=have_previous ?
+      (!out->first_media[0] && segment_number>last_sequence) : 1;
+    if(select) {
+     if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
+     out->cipher_method=method;
+     out->encrypted=method!=0;
+     out->iv_explicit=has_iv;
+     memcpy(out->iv,current_iv,16);
+     unsigned long long iv_sequence=segment_number;
+     if(method==1 && !has_iv) {
+      for(int byte=15;byte>=8;byte--) {
+       out->iv[byte]=(unsigned char)(iv_sequence&255);
+       iv_sequence>>=8;
+      }
      }
+     out->media_sequence=segment_number;
+     snprintf(out->key_url,sizeof(out->key_url),"%s",current_key);
     }
-    out->media_sequence=sequence+(unsigned long long)(out->segments-1);
-    snprintf(out->key_url,sizeof(out->key_url),"%s",current_key);
    }
   }
   p=*e?e+1:e;
  }
  return 0;
+}
+
+int iptvita_hls_inspect(const char *text,const char *base,IptvitaHlsInfo *out)
+{
+ return iptvita_hls_inspect_next(text,base,out,0,0);
 }
