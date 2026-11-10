@@ -88,6 +88,8 @@ static int worker(SceSize args,void *argp)
    *cur=fifo[head];head=(head+1)%FIFO;count--;got=1;
   }
   if(!count)primed=0;
+  stats.buffered=count;
+  stats.primed=primed;
   unlock();
   if(!got){sceKernelDelayThread(5000);continue;}
   if(cur->len<7)continue;
@@ -153,6 +155,7 @@ void iptvita_audio_push_pes(void *user,const unsigned char *data,size_t bytes,ui
     f->len=(unsigned short)n;memcpy(f->bytes,carry,n);
     tail=(tail+1)%FIFO;count++;stats.queued++;
    }else stats.dropped++;
+   stats.buffered=count;
    unlock();
    carry_len-=n;memmove(carry,carry+n,carry_len);
   }
