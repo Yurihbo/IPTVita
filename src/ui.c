@@ -159,7 +159,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.5.6",2,p.muted);
+    label(24,511,"IPTVITA  V0.5.7",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -292,7 +292,12 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         label(265,208,kind,3,p.accent);
         label(265,256,tr(ui,"URL DO STREAM:","STREAM URL:"),2,p.muted);
         clipped(265,284,url,82,2,p.white);
-        label(265,365,tr(ui,"REPRODUCAO EM DESENVOLVIMENTO","PLAYBACK UNDER DEVELOPMENT"),2,p.accent);
+        label(265,365,tr(ui,"TRI TESTAR AVPLAYER NATIVO","TRI TEST NATIVE AVPLAYER"),2,p.accent);
+        if(ui->player_probe_result) {
+            char probe[80];
+            snprintf(probe,sizeof(probe),"AVPLAYER: %d",ui->player_probe_result);
+            label(265,404,probe,2,p.white);
+        }
     }
     if(ui->save_status==5)label(253,465,tr(ui,"PLAYER AINDA NAO DISPONIVEL","PLAYER NOT AVAILABLE YET"),2,p.accent);
 }
@@ -381,7 +386,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.5.6 / M3U ONLINE","VERSION 0.5.6 / ONLINE M3U"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.5.7 / M3U ONLINE","VERSION 0.5.7 / ONLINE M3U"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
