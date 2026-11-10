@@ -15,6 +15,8 @@ static vita2d_texture *texture;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
+static uint64_t newest_pts;
+static int have_newest_pts;
 #define FRAME_QUEUE 180
 #define QUEUE_BYTES (16u*1024u*1024u)
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
@@ -34,6 +36,7 @@ void iptvita_preview_reset(void)
   head=(head+1)%FRAME_QUEUE;count--;
  }
  head=tail=0;total_bytes=0;due_at=0;previous_pts_valid=0;previous_pts=0;
+ newest_pts=0;have_newest_pts=0;
  if(open)iptvita_avc_close(&dec);
  open=0;
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
@@ -151,6 +154,24 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
  if(!data || !size || size>IPTVITA_H264_AU_MAX || decoder_fatal)return;
+ /* Video decoder accepts B-frames out of PTS order (usually a few hundred
+  * milliseconds), but a whole fragment replaying seconds into the past
+  * must not be presented as live content. Reset only at a keyframe across
+  * an actual large timestamp discontinuity. */
+ if(has_pts) {
+  if(have_newest_pts && pts<newest_pts) {
+   uint64_t behind=newest_pts-pts;
+   if(behind>90000ULL*15 && key) {
+    newest_pts=pts;
+    previous_pts_valid=0;
+   }else if(behind>90000ULL) {
+    st.dropped++;
+    return;
+   }
+  }
+  if(!have_newest_pts || pts>newest_pts)newest_pts=pts;
+  have_newest_pts=1;
+ }
  if(key)st.keyframes++;
  if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;return;}
  unsigned char *copy=(unsigned char*)malloc(size);
