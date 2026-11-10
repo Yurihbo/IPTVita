@@ -15,3 +15,10 @@ int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t 
  }
  return 0;
 }
+
+#include <psp2/kernel/processmgr.h>
+#include <stdint.h>
+uint64_t mbedtls_ms_time(void)
+{
+ return (uint64_t)(sceKernelGetProcessTimeWide()/1000);
+}
