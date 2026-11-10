@@ -91,9 +91,10 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   st.decode_error=rc;
   st.decoder_phase=2;
   unsigned error=(unsigned)rc;
-  if((error==0x80620009u || error==0x80620007u ||
-      error==0x80620809u || error==0x80620807u) &&
-      recovery_attempts<2) {
+  int memory_error=error==0x80620009u || error==0x80620007u ||
+                   error==0x80620809u || error==0x80620807u;
+  int parameter_error=error==0x80620002u || error==0x80620802u;
+  if((memory_error || parameter_error) && recovery_attempts<2) {
    /* Reinitialize on the next IDR with room for more reference pictures.
     * Live streams can require more than four reference frames. */
    iptvita_avc_close(&dec);
@@ -102,7 +103,11 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    recovery_attempts++;
    st.recoveries=recovery_attempts;
    st.waiting_for_idr=1;
-   reference_frames=recovery_attempts==1?6:8;
+   /* Parameter failure after PTS fallback needs a clean decoder state,
+    * while picture-memory exhaustion benefits from a larger ref pool. */
+   reference_frames=memory_error?
+       (recovery_attempts==1?6:8):
+       (recovery_attempts==1?3:2);
   }
   return;
  }
