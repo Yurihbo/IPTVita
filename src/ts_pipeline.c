@@ -47,6 +47,18 @@ static void parse_pmt(IptvitaTsPipeline *p,const unsigned char *s,size_t n)
   pos+=5+esinfo;
  }
 }
+static void pes_start(IptvitaTsPipeline *p,const unsigned char *data,size_t n,int video)
+{
+ if(n<9 || data[0]!=0 || data[1]!=0 || data[2]!=1)return;
+ if(video)p->pes_video_starts++;else p->pes_audio_starts++;
+ if((data[7]&0xc0)!=0x80 && (data[7]&0xc0)!=0xc0)return;
+ if(data[8]<5 || n<14)return;
+ const unsigned char *b=data+9;
+ if((b[0]&1)!=1 || (b[2]&1)!=1 || (b[4]&1)!=1)return;
+ uint64_t pts=((uint64_t)(b[0]>>1&7)<<30)|((uint64_t)b[1]<<22)|((uint64_t)(b[2]>>1)<<15)|((uint64_t)b[3]<<7)|(b[4]>>1);
+ if(video){p->last_video_pts=pts;p->video_pts_valid=1;}
+ else {p->last_audio_pts=pts;p->audio_pts_valid=1;}
+}
 int iptvita_ts_feed(IptvitaTsPipeline *p,const unsigned char *data,size_t size)
 {
  if(!p || !data || size%188)return -1;
@@ -66,6 +78,10 @@ int iptvita_ts_feed(IptvitaTsPipeline *p,const unsigned char *data,size_t size)
   if(!(adapt&1) || pos>=188)continue;
   if(pid==p->video_pid)p->video_packets++;
   if(pid==p->audio_pid)p->audio_packets++;
+  if(ts[1]&0x40) {
+   if(pid==p->video_pid)pes_start(p,ts+pos,188-pos,1);
+   if(pid==p->audio_pid)pes_start(p,ts+pos,188-pos,0);
+  }
   if(!(ts[1]&0x40))continue;
   const unsigned char *section=NULL;size_t length=0;
   if(pid==0) {
