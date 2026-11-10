@@ -15,8 +15,8 @@ static vita2d_texture *texture;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
-#define FRAME_QUEUE 120
-#define QUEUE_BYTES (12u*1024u*1024u)
+#define FRAME_QUEUE 180
+#define QUEUE_BYTES (16u*1024u*1024u)
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
 static EncodedFrame frames[FRAME_QUEUE];
 static unsigned head,tail,count;
