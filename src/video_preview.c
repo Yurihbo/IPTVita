@@ -113,6 +113,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    /* Avoid infinite decode loops and unbounded compressed frame churn.
     * Keep the exact SDK error visible until the channel is reopened. */
    decoder_fatal=1;
+   st.fatal=1;
    while(count) {
     free(frames[head].data);
     head=(head+1)%FRAME_QUEUE;
