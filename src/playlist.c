@@ -49,7 +49,7 @@ int iptvita_playlist_load(IptvitaPlaylist *list,const char *path)
     continue;
    }
    line[used]=0;trim(line);
-   if(overflow) {list->status=-8;goto done;}
+   if(overflow) {list->status=-13;goto done;}
    if(!overflow) {
     if(strncmp(line,"#EXTM3U",7)==0) saw_header=1;
     else if(strncmp(line,"#EXTINF:",8)==0) {
@@ -70,7 +70,7 @@ int iptvita_playlist_load(IptvitaPlaylist *list,const char *path)
   }
  }
  if(n<0) {list->status=-1;goto done;}
- if(overflow) {list->status=-8;goto done;}
+ if(overflow) {list->status=-13;goto done;}
  if(used && !overflow) {
   line[used]=0;trim(line);
   if(line[0] && line[0]!='#' && saw_header && list->count<IPTVITA_MAX_CHANNELS) {
