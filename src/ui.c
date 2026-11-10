@@ -485,7 +485,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
             const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
             clipped(25,17,ch->name,55,3,p.white);
             char details[130];
-            snprintf(details,sizeof(details),"%dx%d  H264  VIDEO %u  AUDIO AAC",ui->stream_video_width,ui->stream_video_height,ui->stream_decoded_frames);
+            snprintf(details,sizeof(details),"%dx%d H264 VIDEO %u AUDIO %s (PID %d)",ui->stream_video_width,ui->stream_video_height,ui->stream_decoded_frames,ui->stream_audio_type==0x0f?"AAC ADTS":ui->stream_audio_type==0x11?"AAC LATM":ui->stream_audio_type==3||ui->stream_audio_type==4?"MPEG":ui->stream_audio_pid<0?"NENHUM":"OUTRO",ui->stream_audio_pid);
             label(26,56,details,2,p.accent);
             rect(0,445,IPTVITA_WIDTH,99,RGBA8(8,20,33,224));
             IptvitaAudioStats audio=iptvita_audio_stats();
