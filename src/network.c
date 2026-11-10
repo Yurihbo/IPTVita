@@ -87,7 +87,6 @@ static int download_thread(SceSize args,void *argp)
  int result=-1;
  if(init_network()<0) {result=-8;goto finish;}
  sceIoMkdir("ux0:data/IPTVita",0777);
- if(prepare_ca_bundle()<0) {result=-11;goto finish;}
  if(strncmp(url_copy,"https://",8)==0) {
   /* Separate mbedTLS transport; keep the previous cURL path for plain HTTP. */
   SceUID certfd=sceIoOpen(PACKAGED_CA_PATH,SCE_O_RDONLY,0);
@@ -120,6 +119,7 @@ static int download_thread(SceSize args,void *argp)
   if(result!=2)sceIoRemove(CACHE_PATH);
   goto finish;
  }
+ if(prepare_ca_bundle()<0) {result=-11;goto finish;}
  SceUID fd=sceIoOpen(CACHE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
  if(fd<0) {result=-9;goto finish;}
  CURL *curl=curl_easy_init();
