@@ -63,6 +63,11 @@ static const Glyph font[] = {
     {'!', {0x04,0x04,0x04,0x00,0x04}},
     {',', {0x00,0x00,0x00,0x04,0x08}},
     {'=', {0x00,0x1F,0x00,0x1F,0x00}},
+    {'&', {0x0C,0x12,0x0C,0x12,0x0D}},
+    {'%', {0x19,0x1A,0x04,0x0B,0x13}},
+    {'@', {0x0E,0x11,0x17,0x10,0x0E}},
+    {'#', {0x0A,0x1F,0x0A,0x1F,0x0A}},
+    {'_', {0x00,0x00,0x00,0x00,0x1F}},
 };
 
 typedef struct {
@@ -201,7 +206,8 @@ static void editor(const IptvitaUi *ui, Palette p)
     label(424,190,count,2,p.muted);
     /* Show the tail of long URLs; the complete value remains stored. */
     const char *tail=value+(n>45?n-45:0);
-    clipped(271,216,tail,45,2,p.white);
+    if(ui->edit_field==3) label(271,216,"PASSWORD HIDDEN",2,p.muted);
+    else clipped(271,216,tail,45,2,p.white);
     for(int i=0;i<(int)(sizeof(keyboard)-1);++i) {
         int x=263+(i%11)*59, y=273+(i/11)*36;
         int active=i==ui->keyboard_index;
@@ -223,8 +229,9 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
                           "X EDIT  /  TRI DELETE  /  SELECT ADD"));
     if(!ui->sources.count)
         label(267,164,tr(ui,"NENHUMA FONTE SALVA","NO SOURCES SAVED"),3,p.muted);
-    for(unsigned int i=0;i<ui->sources.count && i<7;++i) {
-        int y=131+(int)i*45;
+    unsigned int offset=ui->list_index>=7 ? (unsigned int)(ui->list_index-6) : 0;
+    for(unsigned int i=offset;i<ui->sources.count && i<offset+7;++i) {
+        int y=131+(int)(i-offset)*45;
         int active=(int)i==ui->list_index;
         rect(252,y,672,39,active?p.selected:p.surface);
         if(active) rect(252,y,4,39,p.accent);
@@ -233,7 +240,7 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
         label(795,y+10,types[ui->sources.items[i].type],2,p.muted);
     }
     if(ui->sources.count>7) {
-        label(252,458,tr(ui,"MOSTRANDO AS 7 PRIMEIRAS","SHOWING FIRST 7"),2,p.muted);
+        label(252,458,tr(ui,"USE CIMA/BAIXO PARA ROLAR","USE UP/DOWN TO SCROLL"),2,p.muted);
     }
     if(ui->save_status==1) label(252,491,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
     if(ui->save_status==4) label(252,491,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
