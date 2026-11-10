@@ -7,7 +7,8 @@
 
 int main(void)
 {
-    IptvitaUi ui = {0};
+    static IptvitaUi ui = {0};
+    iptvita_sources_load(&ui.sources);
     SceCtrlData pad = {0};
     unsigned int previous = 0;
     int quit = 0;
