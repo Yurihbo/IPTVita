@@ -11,15 +11,58 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Alternate HLS audio uses its own TS demux; never feed audio-only PMTs
+ * into the video transport, since that would erase the active video PID. */
+static IptvitaTsPipeline alt_transport;
+static IptvitaPesAssembler alt_pes;
+static int alt_pid=-1;
+static void reset_alt_audio(void)
+{
+ if(alt_pid>=0) {
+  iptvita_pes_flush(&alt_pes);
+  iptvita_pes_close(&alt_pes);
+ }
+ alt_pid=-1;
+ iptvita_ts_init(&alt_transport);
+}
+static void feed_alt_audio(IptvitaUi *ui,const unsigned char *data,size_t size)
+{
+ if(!data || !size)return;
+ if(size>=188 && data[0]==0x47 && size%188==0) {
+  iptvita_ts_feed(&alt_transport,data,size);
+  int pid=alt_transport.audio_type==0x0f?alt_transport.audio_pid:-1;
+  ui->stream_alt_audio_type=alt_transport.audio_type;
+  if(pid!=alt_pid) {
+   if(alt_pid>=0) {
+    iptvita_pes_flush(&alt_pes);
+    iptvita_pes_close(&alt_pes);
+   }
+   alt_pid=-1;
+   if(pid>=0 && iptvita_pes_open(&alt_pes,pid,iptvita_audio_push_pes,NULL)==0)
+    alt_pid=pid;
+  }
+  if(alt_pid>=0) {
+   iptvita_pes_push(&alt_pes,data,size);
+   ui->stream_audio_pid=alt_pid;
+   ui->stream_audio_type=0x0f;
+  }
+ }else if(size>=7 && data[0]==0xff && (data[1]&0xf6)==0xf0) {
+  ui->stream_alt_audio_type=0x0f;
+  ui->stream_audio_type=0x0f;
+  iptvita_audio_push_pes(NULL,data,size,0,0);
+ }
+}
 static IptvitaVideoPipeline pipeline;
 static int pipeline_open;
 static unsigned long long now_us(void) {return (unsigned long long)sceKernelGetProcessTimeWide();}
 static void close_pipeline(void)
 {
- if(!pipeline_open)return;
- iptvita_video_close(&pipeline);
+ reset_alt_audio();
+ if(pipeline_open) {
+  iptvita_video_close(&pipeline);
+  pipeline_open=0;
+ }
  iptvita_audio_stop();
- pipeline_open=0;
 }
 static void count_frame(void *user,const unsigned char *data,size_t size,
                         uint64_t pts,int has_pts,int keyframe)
@@ -58,6 +101,16 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
  ui->stream_audio_pid=-1;ui->stream_audio_type=0;
+ ui->stream_alt_audio_list_url[0]=0;
+ ui->stream_alt_audio_segment_url[0]=0;
+ ui->stream_alt_audio_key_url[0]=0;
+ ui->stream_alt_audio_cached_key_url[0]=0;
+ memset(ui->stream_alt_audio_key,0,16);
+ ui->stream_alt_audio_key_valid=ui->stream_alt_audio_has_sequence=0;
+ ui->stream_alt_audio_pending=0;ui->stream_alt_audio_cipher=0;
+ ui->stream_alt_audio_last_sequence=0;
+ ui->stream_alt_audio_selected_sequence=0;
+ ui->stream_alt_audio_type=0;
  ui->stream_decode_error=0;ui->stream_decoded_frames=0;
  ui->stream_video_width=ui->stream_video_height=0;
  iptvita_preview_reset();
