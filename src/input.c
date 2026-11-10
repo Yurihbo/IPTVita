@@ -104,6 +104,8 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
                 ui->player_probe_result=0;
                 iptvita_stream_start(ui,ui->playlist.channels[ui->channel_index].url);}
             if(pressed&SCE_CTRL_SQUARE) {
+                ui->stream_stage=0;
+                ui->stream_status=0;
                 ui->player_probe_target=2;
                 ui->player_probe_result=iptvita_player_probe("ux0:data/IPTVita/test.mp4");
             }
