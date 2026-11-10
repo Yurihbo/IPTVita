@@ -39,13 +39,14 @@ void iptvita_preview_reset(void)
  free(rgba);rgba=NULL;rgba_size=0;
  memset(&st,0,sizeof st);
  wait_for_idr=1;recovery_attempts=0;reference_frames=4;
+ st.waiting_for_idr=1;
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
  if(!data || !size)return;
  /* Never start the hardware on an arbitrary P or B frame of a live stream.
   * Wait for a random-access (IDR) picture after tuning or after recovery. */
- if(wait_for_idr && !key)return;
+ if(wait_for_idr && !key){st.dropped++;return;}
  if(!open) {
   int w=0,h=0;
   if(iptvita_h264_dimensions(data,size,&w,&h)<0) {
@@ -92,11 +93,14 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    open=0;
    wait_for_idr=1;
    recovery_attempts++;
+   st.recoveries=recovery_attempts;
+   st.waiting_for_idr=1;
    reference_frames=recovery_attempts==1?6:8;
   }
   return;
  }
  wait_for_idr=0;
+ st.waiting_for_idr=0;
  st.decode_error=0;
  if(rc==0)return;
  st.decoded++;
@@ -110,7 +114,8 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
  if(!data || !size || size>IPTVITA_H264_AU_MAX)return;
- if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes)return;
+ if(key)st.keyframes++;
+ if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;return;}
  unsigned char *copy=(unsigned char*)malloc(size);
  if(!copy)return;
  memcpy(copy,data,size);
@@ -122,6 +127,7 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  tail=(tail+1)%FRAME_QUEUE;
  count++;
  total_bytes+=size;
+ st.queued=count;
 }
 void iptvita_preview_tick(void)
 {
@@ -131,6 +137,7 @@ void iptvita_preview_tick(void)
  EncodedFrame item=frames[head];
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
+ st.queued=count;
  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
  free(item.data);
  unsigned long long duration=33333ULL;
