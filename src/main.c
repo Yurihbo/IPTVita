@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "input.h"
+#include "keyboard.h"
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
@@ -55,7 +56,13 @@ int main(void)
             }
             touch_was_down=touch.reportNum!=0;
         } else touch_was_down=0;
-        quit = iptvita_handle_input(&ui, pressed);
+        if(iptvita_keyboard_active()) {
+            iptvita_keyboard_tick();
+            previous=pad.buttons;
+            touch_was_down=0;
+        } else {
+            quit = iptvita_handle_input(&ui, pressed);
+        }
 
         vita2d_start_drawing();
         iptvita_ui_render(&ui);
