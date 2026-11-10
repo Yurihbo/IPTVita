@@ -26,7 +26,14 @@ add_executable(IPTVita.elf
 )
 
 target_include_directories(IPTVita.elf PRIVATE src)
+file(GLOB VITA_EXTRA_STUBS
+  "$ENV{VITASDK}/arm-vita-eabi/lib/libSceSharedFb*_stub.a"
+  "$ENV{VITASDK}/arm-vita-eabi/lib/libSceAppMgr_stub.a"
+)
+
 target_link_libraries(IPTVita.elf
+  ${VITA_EXTRA_STUBS}
+  SceCommonDialog_stub
   vita2d
   SceCtrl_stub
   SceDisplay_stub
