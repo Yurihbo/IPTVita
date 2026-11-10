@@ -447,7 +447,14 @@ void iptvita_ui_render(const IptvitaUi *ui)
         vita2d_clear_screen();
         rect(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT,RGBA8(0,0,0,255));
         if(ui->stream_decoded_frames) iptvita_preview_draw(0,0,IPTVITA_WIDTH,IPTVITA_HEIGHT);
-        else if(!ui->stream_info_visible) label(395,270,tr(ui,"CARREGANDO CANAL...","LOADING CHANNEL..."),2,p.muted);
+        else if(!ui->stream_info_visible) {
+            if(ui->stream_decode_error)
+                label(295,267,tr(ui,"VIDEO INDISPONIVEL - APERTE R1","VIDEO UNAVAILABLE - PRESS R1"),2,p.accent);
+            else if(ui->stream_stage<0)
+                label(305,267,tr(ui,"FALHA NO CANAL - APERTE R1","CHANNEL ERROR - PRESS R1"),2,p.accent);
+            else
+                label(395,270,tr(ui,"CARREGANDO CANAL...","LOADING CHANNEL..."),2,p.muted);
+        }
         if(ui->stream_info_visible) {
             rect(0,0,IPTVITA_WIDTH,87,RGBA8(8,20,33,224));
             const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
