@@ -11,7 +11,6 @@
 #include <string.h>
 
 #define CACHE_PATH "ux0:data/IPTVita/online.m3u"
-#define CA_BUNDLE_PATH "ux0:data/IPTVita/cacert.pem"
 #define PACKAGED_CA_PATH "app0:cacert.pem"
 #define MAX_BYTES (4u*1024u*1024u)
 static char url_copy[4096];
@@ -48,21 +47,38 @@ static int init_network(void)
  network_ready=1;
  return 0;
 }
+/* Load PEM with Vita I/O, then let libcurl pass it to its TLS backend
+ * as an in-memory certificate bundle (no fopen on Vita device paths). */
+static struct curl_blob ca_blob;
+static void *ca_memory;
 static int prepare_ca_bundle(void)
 {
- SceUID in=sceIoOpen(PACKAGED_CA_PATH,SCE_O_RDONLY,0);
- if(in<0) return -1;
- SceUID out=sceIoOpen(CA_BUNDLE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
- if(out<0) {sceIoClose(in);return -2;}
- char buf[4096];int n,ok=1;size_t total=0;
- while((n=sceIoRead(in,buf,sizeof(buf)))>0) {
-  if(sceIoWrite(out,buf,n)!=n) {ok=0;break;}
-  total+=(size_t)n;
+#if LIBCURL_VERSION_NUM < 0x074D00
+ return -4; /* CURLOPT_CAINFO_BLOB requires libcurl 7.77.0 */
+#else
+ if(ca_memory) return 0;
+ SceUID fd=sceIoOpen(PACKAGED_CA_PATH,SCE_O_RDONLY,0);
+ if(fd<0) return -1;
+ SceOff size=sceIoLseek(fd,0,SCE_SEEK_END);
+ if(size<1024 || size>1024*1024 || sceIoLseek(fd,0,SCE_SEEK_SET)<0) {
+  sceIoClose(fd);return -2;
  }
- if(n<0) ok=0;
- sceIoClose(in);sceIoClose(out);
- if(!ok || total<1024) {sceIoRemove(CA_BUNDLE_PATH);return -3;}
+ void *data=malloc((size_t)size);
+ if(!data) {sceIoClose(fd);return -3;}
+ size_t used=0;
+ while(used<(size_t)size) {
+  int n=sceIoRead(fd,(char*)data+used,(unsigned int)((size_t)size-used));
+  if(n<=0) break;
+  used+=(size_t)n;
+ }
+ sceIoClose(fd);
+ if(used!=(size_t)size) {free(data);return -3;}
+ ca_memory=data;
+ ca_blob.data=data;
+ ca_blob.len=used;
+ ca_blob.flags=CURL_BLOB_NOCOPY;
  return 0;
+#endif
 }
 static int download_thread(SceSize args,void *argp)
 {
@@ -81,8 +97,14 @@ static int download_thread(SceSize args,void *argp)
  curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
  curl_easy_setopt(curl,CURLOPT_CONNECTTIMEOUT,12L);
  curl_easy_setopt(curl,CURLOPT_TIMEOUT,50L);
- curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.4");
- curl_easy_setopt(curl,CURLOPT_CAINFO,CA_BUNDLE_PATH);
+ curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.5");
+#if LIBCURL_VERSION_NUM >= 0x074D00
+ CURLcode ca_option=curl_easy_setopt(curl,CURLOPT_CAINFO_BLOB,&ca_blob);
+ if(ca_option!=CURLE_OK) {
+  curl_error=(int)ca_option;
+  curl_easy_cleanup(curl);sceIoClose(fd);result=-12;goto finish;
+ }
+#endif
  curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,write_file);
  curl_easy_setopt(curl,CURLOPT_WRITEDATA,&d);
  curl_easy_setopt(curl,CURLOPT_SSL_VERIFYPEER,1L);
