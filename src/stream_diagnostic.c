@@ -2,6 +2,7 @@
 #include "network.h"
 #include "hls.h"
 #include "video_pipeline.h"
+#include "video_preview.h"
 #include <psp2/io/fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,8 +12,8 @@ static void count_frame(void *user,const unsigned char *data,size_t size,
                         uint64_t pts,int has_pts,int keyframe)
 {
  IptvitaUi *ui=(IptvitaUi*)user;
- (void)data;(void)size;(void)pts;(void)has_pts;(void)keyframe;
  ui->stream_frames++;
+ iptvita_preview_submit(data,size,pts,has_pts,keyframe);
 }
 static void fail(IptvitaUi *ui,int error)
 {
@@ -34,6 +35,9 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  if(ui->stream_stage>=1 && ui->stream_stage<=3)return -2;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
+ ui->stream_decode_error=0;ui->stream_decoded_frames=0;
+ ui->stream_video_width=ui->stream_video_height=0;
+ iptvita_preview_reset();
  ui->stream_http=0;ui->stream_net_error=0;
  int ts=strstr(url,".ts")!=NULL && !strstr(url,".m3u8");
  int result=schedule(ui,url,ts?3:1);
@@ -85,6 +89,11 @@ static void inspect_ts(IptvitaUi *ui)
  ui->stream_nals=v->transport.h264_nal_units;
  ui->stream_video_pid=v->transport.video_pid;
  iptvita_video_close(v);
+ IptvitaPreviewStats stats=iptvita_preview_stats();
+ ui->stream_decode_error=stats.decode_error;
+ ui->stream_decoded_frames=stats.decoded;
+ ui->stream_video_width=stats.width;
+ ui->stream_video_height=stats.height;
  free(v);
  sceIoClose(fd);
  if(ui->stream_stage==3)ui->stream_stage=ui->stream_packets?4:-16;
