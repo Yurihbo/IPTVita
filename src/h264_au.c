@@ -37,9 +37,29 @@ static int first_mb(const unsigned char *nal,size_t n)
  }
  return (int)(value-1);
 }
+static int has_nal(const unsigned char *buf,size_t size,int nal_type)
+{
+ for(size_t i=0;i+4<size;i++)
+  if(buf[i]==0 && buf[i+1]==0 && buf[i+2]==0 &&
+     buf[i+3]==1 && (buf[i+4]&31)==nal_type)return 1;
+ return 0;
+}
+static void prepend(IptvitaH264Au *a,const unsigned char *data,size_t size)
+{
+ if(!size || !a->buffer || size>IPTVITA_H264_AU_MAX-a->used)return;
+ memmove(a->buffer+size,a->buffer,a->used);
+ memcpy(a->buffer,data,size);
+ a->used+=size;
+}
 static void emit(IptvitaH264Au *a)
 {
  if(a->has_vcl && a->used && a->sink) {
+  /* A live segment can start on an IDR without in-band SPS/PPS.
+   * Repeat the latest authorized codec metadata before that keyframe. */
+  if(a->has_idr) {
+   if(!has_nal(a->buffer,a->used,8))prepend(a,a->pps,a->pps_size);
+   if(!has_nal(a->buffer,a->used,7))prepend(a,a->sps,a->sps_size);
+  }
   a->sink(a->user,a->buffer,a->used,a->pts,a->has_pts,a->has_idr);
   a->frames++;
  }
@@ -84,6 +104,16 @@ void iptvita_h264_au_pes(void *user,const unsigned char *data,size_t size,uint64
   memcpy(a->buffer+a->used,data+nalpos,payload);a->used+=payload;
   if(vcl)a->has_vcl=1;
   if(type==5)a->has_idr=1;
+  if(type==7 && payload+4<=sizeof(a->sps)) {
+   memcpy(a->sps,sc,4);
+   memcpy(a->sps+4,data+nalpos,payload);
+   a->sps_size=payload+4;
+  }
+  if(type==8 && payload+4<=sizeof(a->pps)) {
+   memcpy(a->pps,sc,4);
+   memcpy(a->pps+4,data+nalpos,payload);
+   a->pps_size=payload+4;
+  }
   a->units++;
   at=end;
  }
