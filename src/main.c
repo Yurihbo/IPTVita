@@ -3,12 +3,11 @@
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
-#include <psp2/display.h>
 #include <vita2d.h>
 
 int main(void)
 {
-    IptvitaUi ui = {0, 0};
+    IptvitaUi ui = {0};
     SceCtrlData pad = {0};
     unsigned int previous = 0;
     int quit = 0;
@@ -18,7 +17,7 @@ int main(void)
 
     while (!quit) {
         sceCtrlPeekBufferPositive(0, &pad, 1);
-        const unsigned int pressed = pad.buttons & ~previous;
+        unsigned int pressed = pad.buttons & ~previous;
         previous = pad.buttons;
         quit = iptvita_handle_input(&ui, pressed);
 
