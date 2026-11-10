@@ -159,7 +159,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.5.4",2,p.muted);
+    label(24,511,"IPTVITA  V0.5.5",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -248,7 +248,8 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
             ui->playlist.status==-8?"ERRO AO INICIAR REDE":
             ui->playlist.status==-9?"ERRO AO ABRIR CACHE":
             ui->playlist.status==-10?"ERRO AO INICIAR CURL":
-            ui->playlist.status==-11?"ERRO AO COPIAR CERTIFICADOS":"LIMITE DE CANAIS";
+            ui->playlist.status==-11?"ERRO AO LER CERTIFICADOS":
+            ui->playlist.status==-12?"CURL NAO ACEITA CA EM MEMORIA":"LIMITE DE CANAIS";
         const char *en=ui->playlist.status==-1?"FILE READ ERROR":
             ui->playlist.status==-2?"INVALID OR EMPTY M3U":
             ui->playlist.status==-4?"INVALID LOCAL PATH":
@@ -258,7 +259,8 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
             ui->playlist.status==-8?"NETWORK INITIALIZATION ERROR":
             ui->playlist.status==-9?"CACHE FILE OPEN ERROR":
             ui->playlist.status==-10?"CURL INITIALIZATION ERROR":
-            ui->playlist.status==-11?"CERTIFICATE COPY ERROR":"CHANNEL LIMIT";
+            ui->playlist.status==-11?"CERTIFICATE READ ERROR":
+            ui->playlist.status==-12?"CURL MEMORY CA UNSUPPORTED":"CHANNEL LIMIT";
         label(263,150,ui->language?en:pt,3,p.accent);
         if(ui->playlist.status==-7 || ui->playlist.status==-6) {
             char detail[80];
@@ -365,7 +367,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.5.4 / M3U ONLINE","VERSION 0.5.4 / ONLINE M3U"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.5.5 / M3U ONLINE","VERSION 0.5.5 / ONLINE M3U"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
