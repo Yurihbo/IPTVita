@@ -48,6 +48,7 @@ int main(void)
                     int index=row*11+col;
                     if(index>=0 && index<49) {
                         ui.keyboard_index=index;
+                        ui.grid_keyboard=1;
                         pressed |= SCE_CTRL_CROSS;
                     }
                 }
