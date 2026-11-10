@@ -206,6 +206,13 @@ void iptvita_stream_poll(IptvitaUi *ui)
 {
  if(!ui)return;
  if(ui->stream_stage==5) {
+  IptvitaPreviewStats video=iptvita_preview_stats();
+  if(video.fatal) {
+   ui->stream_decode_error=video.decode_error;
+   ui->stream_stage=-29;
+   iptvita_audio_pause(1);
+   return;
+  }
   if(!ui->stream_paused && ui->stream_media_url[0] &&
      now_us()>=ui->stream_refresh_at) {
    int rc=schedule(ui,ui->stream_media_url,2);
