@@ -293,7 +293,7 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         clipped(265,155,ch->name,40,3,p.white);
         if(ui->stream_decoded_frames) {
             rect(272,190,640,310,RGBA8(0,0,0,255));
-            iptvita_preview_draw(272,190,640,310);
+            iptvita_preview_draw(272,190,640,310,0);
             if(!ui->stream_info_visible)return;
             rect(272,388,640,105,RGBA8(8,20,33,225));
             char details[120];
