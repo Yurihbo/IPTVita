@@ -11,6 +11,7 @@ static char backup[4096];
 static char *target;
 static size_t target_cap;
 static volatile int finished, accepted, active;
+static int module_loaded;
 
 static void ime_event(void *arg,const SceImeEventData *event)
 {
@@ -74,14 +75,22 @@ int iptvita_keyboard_begin(char *text,size_t capacity,int is_url,int is_password
     param.handler=ime_event;
     param.initialText=initial;
     param.inputTextBuffer=input;
-    param.maxTextLength=capacity-1<2048?(unsigned int)(capacity-1):2048;
-    param.type=is_url?SCE_IME_TYPE_URL:SCE_IME_TYPE_DEFAULT;
+    /* Limit IME text to a modest working size on the Vita. The source field
+       itself still supports 4095-byte URLs through the fallback editor. */
+    param.maxTextLength=capacity-1<512?(unsigned int)(capacity-1):512;
+    /* URL mode can trigger instability on some Vita system keyboards.
+       BASIC_LATIN supports URL punctuation without the URL-mode handler. */
+    param.type=is_url?SCE_IME_TYPE_BASIC_LATIN:SCE_IME_TYPE_DEFAULT;
     param.option=SCE_IME_OPTION_NO_AUTO_CAPITALIZATION;
     param.enterLabel=SCE_IME_ENTER_LABEL_GO;
     param.supportedLanguages=language?SCE_IME_LANGUAGE_ENGLISH:SCE_IME_LANGUAGE_PORTUGUESE_BR;
     param.languagesForced=0;
     finished=0; accepted=0;
-    if(sceSysmoduleLoadModule(SCE_SYSMODULE_IME)<0) return -1;
+    if(!module_loaded) {
+        int loaded=sceSysmoduleLoadModule(SCE_SYSMODULE_IME);
+        if(loaded<0) return -1;
+        module_loaded=1;
+    }
     if(sceImeOpen(&param)<0) return -1;
     target=text; target_cap=capacity; active=1;
     return 0;
