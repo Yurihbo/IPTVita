@@ -80,3 +80,9 @@ Native IME behavior must be tested on real Vita hardware. The app keeps the cust
 The first Stage 4 build parses **local** `#EXTM3U` files from `ux0:` and displays channel names and `group-title` metadata. Add a **Local M3U** source with an absolute path such as `ux0:data/IPTVita/test.m3u`. Open **Sources → SELECT (saved list) → X** to browse its channels; **R** edits the source, **Square** deletes it, and **Circle** returns to saved sources. Up/down scrolls channels, up to 300 entries in this first memory-bounded implementation. It never executes or plays an entry at this stage.
 
 **Important limitations:** online M3U URLs are saved but cannot be downloaded/opened in v0.4.0. Xtream, HLS playback, and direct-stream playback are not yet implemented. Online playlist fetching is the next Stage 4 milestone, followed by playback and favorites. Local playlists must start with `#EXTM3U`; line lengths over 4095 bytes are ignored. Only files under `ux0:` are accepted for now.
+
+## Stage 5.0 — Remote M3U (experimental)
+
+Saved **M3U / M3U8** sources can now be opened directly from HTTP/HTTPS URLs: **Sources → SELECT → X**. A background thread downloads the file to `ux0:data/IPTVita/online.m3u` and the existing M3U parser lists the channels. The UI stays responsive during downloads and reports HTTP, TLS/network, invalid M3U and size errors. Downloads are capped at 4 MiB, limited to 50 seconds, and channel display remains capped at 300. HTTP redirects are limited to four. The shared cache is replaced by each successful download; no offline per-source caching yet.
+
+**HTTPS security:** certificate verification is enabled. Some PS Vita firmware environments may lack a usable CA bundle and reject otherwise valid HTTPS servers; this should be diagnosed on the physical console rather than disabling verification silently. Playback, Xtream login, AES-128 and favorites are not implemented. Do not treat a downloaded M3U as playable video.
