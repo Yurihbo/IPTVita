@@ -3,19 +3,19 @@
 A new, independent IPTV player for PlayStation Vita and PlayStation TV.
 
 **Author:** Yurihbo  
-**Status:** Stage 1 — foundation (`v0.1.0`)
+**Status:** Stage 2 — UI preview (`v0.2.0`)
 
 IPTVita is being developed from new source code in C with VitaSDK. It does not include the source code or assets of Vita IPTV. The other application is used as a functional and technical reference only.
 
 ## Stage 1
 
-- Original dark-blue user interface, optimized for the Vita's 960 × 544 display.
-- D-pad navigation and Cross/Circle input.
+- Original dark-blue user interface, optimized for the Vita's 960 × 544 display; home, sources, settings and about screens with three themes.
+- D-pad navigation, Cross/Circle, L/R page switching, START exit confirmation.
 - Placeholder entries for M3U/M3U8 URLs, Xtream Codes, local M3U files and direct stream links.
 - Independent application identifier `IPTVI0001` and data directory `ux0:data/IPTVita/` (reserved for later stages).
 - Automated GitHub Actions build publishing `IPTVita.vpk` as an artifact.
 
-**Important:** Stage 1 is a shell, **not a media player yet**. Playback, HTTPS/HLS AES-128, Pluto TV playlists, buffering and caching will be developed and tested separately in later stages. No playlist URLs or user credentials are bundled.
+**Important:** Stage 2 adds navigable menus and themes, but it is **not a media player yet**. Playback, HTTPS/HLS AES-128, Pluto TV playlists, buffering and caching will be developed and tested separately in later stages. No playlist URLs or user credentials are bundled.
 
 ## Build
 
