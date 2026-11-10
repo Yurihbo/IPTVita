@@ -102,7 +102,7 @@ static void label(int x, int y, const char *s, int scale, unsigned int color)
                 unsigned char mask = rows[r];
                 for (int c = 0; c < 5; ++c)
                     if (mask & (1u << (4 - c)))
-                        rect(x + c*scale, y + r*scale, scale, scale, color);
+                        rect(x + c*scale, y + r*scale, scale > 1 ? scale-1 : 1, scale > 1 ? scale-1 : 1, color);
             }
         }
         x += 6*scale;
@@ -118,13 +118,20 @@ static void badge(int x, int y, const char *value, unsigned int fg, unsigned int
     rect(x,y,180,27,bg);
     label(x+12,y+8,value,2,fg);
 }
+static const char *tr(const IptvitaUi *ui, const char *pt, const char *en)
+{
+    return ui->language ? en : pt;
+}
+
 static void sidebar(const IptvitaUi *ui, Palette p)
 {
-    static const char *pages[]={"HOME","SOURCES","SETTINGS","ABOUT"};
+    static const char *pages_pt[]={"INICIO","FONTES","AJUSTES","SOBRE"};
+    static const char *pages_en[]={"HOME","SOURCES","SETTINGS","ABOUT"};
+    const char **pages = ui->language ? pages_en : pages_pt;
     rect(0,0,222,544,p.sidebar);
     rect(0,0,222,4,p.accent);
-    label(23,30,"IPTVITA",5,p.white);
-    label(24,70,"YOUR MEDIA HUB",2,p.muted);
+    label(23,31,"IPTVITA",4,p.white);
+    label(24,70,tr(ui,"SUA CENTRAL IPTV","YOUR MEDIA HUB"),2,p.muted);
     rect(22,101,176,2,p.raised);
     for (int i=0;i<IPTVITA_NAV_COUNT;++i) {
         int y=136+i*70;
@@ -135,7 +142,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
         label(36,y+17,pages[i],3,active?p.white:p.muted);
     }
     rect(22,452,176,2,p.raised);
-    label(23,476,"BY YURIHBO",3,p.accent);
+    label(23,476,"BY YURIHBO",2,p.accent);
     label(24,511,"IPTVITA  V0.2",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
@@ -147,26 +154,30 @@ static void heading(int page, Palette p, const char *title, const char *hint)
 }
 static void home(const IptvitaUi *ui, Palette p)
 {
-    heading(ui->page,p,"WELCOME","A LIGHTWEIGHT IPTV PLAYER FOR PS VITA");
-    badge(744,30,"UI PREVIEW",p.accent,p.surface);
+    heading(ui->page,p,tr(ui,"BEM-VINDO","WELCOME"),tr(ui,"UM IPTV LEVE PARA PS VITA","A LIGHTWEIGHT IPTV PLAYER FOR PS VITA"));
+    badge(744,30,tr(ui,"PREVIA UI","UI PREVIEW"),p.accent,p.surface);
     rect(252,130,672,148,p.surface);
     rect(252,130,5,148,p.accent);
-    label(278,157,"YOUR STREAMS",5,p.white);
-    label(280,203,"ONE PLACE FOR ALL YOUR SOURCES",2,p.muted);
-    label(280,241,"OPEN SOURCES TO CONTINUE",2,p.accent);
+    label(278,157,tr(ui,"SUAS FONTES","YOUR STREAMS"),4,p.white);
+    label(280,203,tr(ui,"TODAS AS SUAS FONTES EM UM LUGAR","ONE PLACE FOR ALL YOUR SOURCES"),2,p.muted);
+    label(280,241,tr(ui,"ABRA FONTES PARA CONTINUAR","OPEN SOURCES TO CONTINUE"),2,p.accent);
     rect(252,299,324,146,p.raised);
     rect(595,299,329,146,p.raised);
     label(277,327,"0",7,p.white);
-    label(278,395,"SAVED SOURCES",2,p.muted);
+    label(278,395,tr(ui,"FONTES SALVAS","SAVED SOURCES"),2,p.muted);
     label(617,338,"HLS  AES-128",3,p.white);
-    label(617,387,"PLANNED FOR STAGE 4",2,p.muted);
-    label(252,488,"L/R SWITCH  |  X SELECT  |  START EXIT",2,p.muted);
+    label(617,387,tr(ui,"PREVISTO NA ETAPA 4","PLANNED FOR STAGE 4"),2,p.muted);
+    label(252,488,tr(ui,"L/R TELAS  /  X SELECIONAR  /  START SAIR","L/R SWITCH  /  X SELECT  /  START EXIT"),2,p.muted);
 }
 static void sources(const IptvitaUi *ui, Palette p)
 {
-    static const char *names[]={"M3U / M3U8","XTREAM CODES","DIRECT STREAM","LOCAL M3U"};
-    static const char *details[]={"PLAYLIST URL","SERVER / USER / PASS","SINGLE VIDEO URL","FILE ON MEMORY CARD"};
-    heading(ui->page,p,"SOURCES","CHOOSE THE FORMAT YOU WANT TO ADD");
+    static const char *names_pt[]={"M3U / M3U8","XTREAM CODES","LINK DIRETO","M3U LOCAL"};
+    static const char *names_en[]={"M3U / M3U8","XTREAM CODES","DIRECT STREAM","LOCAL M3U"};
+    static const char *details_pt[]={"URL DA LISTA","SERVIDOR / USUARIO / SENHA","URL DO VIDEO","ARQUIVO NO CARTAO"};
+    static const char *details_en[]={"PLAYLIST URL","SERVER / USER / PASS","SINGLE VIDEO URL","FILE ON MEMORY CARD"};
+    const char **names = ui->language ? names_en : names_pt;
+    const char **details = ui->language ? details_en : details_pt;
+    heading(ui->page,p,tr(ui,"FONTES","SOURCES"),tr(ui,"ESCOLHA O TIPO DE FONTE","CHOOSE THE FORMAT YOU WANT TO ADD"));
     for (int i=0;i<IPTVITA_SOURCE_COUNT;++i) {
         int x=252+(i%2)*342, y=131+(i/2)*153;
         int active=ui->card_index==i && ui->focus_content;
@@ -177,13 +188,15 @@ static void sources(const IptvitaUi *ui, Palette p)
         label(x+18,y+69,names[i],3,p.white);
         label(x+18,y+105,details[i],2,p.muted);
     }
-    label(252,476,"X PREVIEW  |  LEFT MENU  |  O BACK",2,p.muted);
+    label(252,476,tr(ui,"X PREVIA  /  ESQUERDA MENU  /  O VOLTAR","X PREVIEW  /  LEFT MENU  /  O BACK"),2,p.muted);
 }
 static void settings(const IptvitaUi *ui, Palette p)
 {
-    static const char *items[]={"COLOR THEME","PREFERRED RESOLUTION","LANGUAGE"};
-    static const char *detail[]={"BLUE / TEAL / INDIGO","AUTO / 720P / 1080P","PORTUGUESE (PLANNED)"};
-    heading(ui->page,p,"SETTINGS","VISUAL PREFERENCES AND FUTURE OPTIONS");
+    static const char *items_pt[]={"TEMA DE CORES","RESOLUCAO PREFERIDA","IDIOMA"};
+    static const char *items_en[]={"COLOR THEME","PREFERRED RESOLUTION","LANGUAGE"};
+    const char **items=ui->language ? items_en : items_pt;
+    heading(ui->page,p,tr(ui,"AJUSTES","SETTINGS"),
+            tr(ui,"PERSONALIZE SUA EXPERIENCIA","VISUAL PREFERENCES AND FUTURE OPTIONS"));
     for (int i=0;i<3;++i) {
         int y=140+i*94;
         int active=ui->settings_index==i && ui->focus_content;
@@ -191,37 +204,47 @@ static void settings(const IptvitaUi *ui, Palette p)
         if(active) rect(252,y,4,78,p.accent);
         label(277,y+15,items[i],3,p.white);
         if (i==0) {
-            label(277,y+50,ui->theme==0?"DEEP BLUE":ui->theme==1?"OCEAN TEAL":"INDIGO",2,p.accent);
+            const char *themes_pt[]={"AZUL ESCURO","AZUL OCEANO","INDIGO"};
+            const char *themes_en[]={"DEEP BLUE","OCEAN TEAL","INDIGO"};
+            label(277,y+50,ui->language?themes_en[ui->theme]:themes_pt[ui->theme],2,p.accent);
+        } else if (i==1) {
+            label(277,y+50,tr(ui,"AUTO / 720P / 1080P (EM BREVE)",
+                                 "AUTO / 720P / 1080P (COMING SOON)"),2,p.muted);
         } else {
-            label(277,y+50,detail[i],2,p.muted);
+            label(277,y+50,ui->language?"ENGLISH":"PORTUGUES (BR)",2,p.accent);
         }
     }
-    label(252,467,"X CHANGE THEME  |  O BACK",2,p.muted);
-    label(252,495,"OTHER OPTIONS ARRIVE WITH PLAYBACK",2,p.muted);
+    label(252,467,tr(ui,"X ALTERAR TEMA OU IDIOMA  /  O VOLTAR",
+                         "X CHANGE THEME OR LANGUAGE  /  O BACK"),2,p.muted);
+    label(252,495,tr(ui,"OUTRAS OPCOES CHEGAM COM O PLAYER",
+                         "OTHER OPTIONS ARRIVE WITH PLAYBACK"),2,p.muted);
 }
 static void about(const IptvitaUi *ui, Palette p)
 {
-    heading(ui->page,p,"ABOUT IPTVITA","INDEPENDENT OPEN-SOURCE PROJECT");
+    heading(ui->page,p,tr(ui,"SOBRE IPTVITA","ABOUT IPTVITA"),
+            tr(ui,"PROJETO INDEPENDENTE E ABERTO","INDEPENDENT OPEN-SOURCE PROJECT"));
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
-    label(282,169,"IPTVITA",6,p.white);
-    label(283,221,"VERSION 0.2.0  /  UI PREVIEW",3,p.accent);
-    label(284,280,"CREATED BY YURIHBO",3,p.white);
-    label(284,328,"MIT LICENSE  2026 YURIHBO",2,p.muted);
+    label(282,169,"IPTVITA",5,p.white);
+    label(283,221,tr(ui,"VERSAO 0.2.1 / PREVIA","VERSION 0.2.1 / UI PREVIEW"),3,p.accent);
+    label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
+    label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
-    label(252,488,"O BACK  |  L/R SWITCH PAGES",2,p.muted);
+    label(252,488,tr(ui,"O VOLTAR  /  L/R MUDAR TELAS",
+                         "O BACK  /  L/R SWITCH PAGES"),2,p.muted);
 }
 static void dialog(const IptvitaUi *ui, Palette p)
 {
     rect(168,152,625,241,p.bg);
     stroke(168,152,625,241,p.accent);
-    label(206,193,ui->quit_confirm?"EXIT IPTVITA?":"COMING IN STAGE 3",4,p.white);
+    label(206,193,ui->quit_confirm?tr(ui,"SAIR DO IPTVITA?","EXIT IPTVITA?"):
+                                   tr(ui,"DISPONIVEL NA ETAPA 3","COMING IN STAGE 3"),3,p.white);
     if (ui->quit_confirm) {
-        label(206,263,"X EXIT APP",3,p.accent);
-        label(206,316,"O KEEP BROWSING",3,p.muted);
+        label(206,263,tr(ui,"X SAIR","X EXIT APP"),3,p.accent);
+        label(206,316,tr(ui,"O CONTINUAR","O KEEP BROWSING"),3,p.muted);
     } else {
-        label(206,263,"THIS OPTION IS A PREVIEW",3,p.muted);
-        label(206,316,"O RETURN TO THE MENU",3,p.accent);
+        label(206,263,tr(ui,"FUNCAO EM DESENVOLVIMENTO","THIS OPTION IS A PREVIEW"),3,p.muted);
+        label(206,316,tr(ui,"O VOLTAR AO MENU","O RETURN TO THE MENU"),3,p.accent);
     }
 }
 void iptvita_ui_render(const IptvitaUi *ui)
