@@ -1,5 +1,6 @@
 #include "avc_decoder.h"
 #include <psp2/kernel/sysmem.h>
+#include <psp2/gxm.h>
 #include <psp2/sysmodule.h>
 #include <string.h>
 
@@ -9,7 +10,14 @@ void iptvita_avc_close(IptvitaAvcDecoder *d)
 {
  if(!d)return;
  if(d->decoder_open)sceAvcdecDeleteDecoder(&d->ctrl);
- for(unsigned i=0;i<8;i++)if(d->picture_uid[i]>=0)sceKernelFreeMemBlock(d->picture_uid[i]);
+ for(unsigned i=0;i<8;i++) {
+  if(d->picture_mapped[i] && d->picture_data[i])
+   sceGxmUnmapMemory(d->picture_data[i]);
+  if(d->picture_uid[i]>=0)sceKernelFreeMemBlock(d->picture_uid[i]);
+  d->picture_uid[i]=-1;
+  d->picture_data[i]=NULL;
+  d->picture_mapped[i]=0;
+ }
  if(d->es_uid>=0)sceKernelFreeMemBlock(d->es_uid);
  d->es_uid=-1;d->es_data=NULL;d->es_capacity=0;
  d->picture_count=0;
@@ -30,6 +38,12 @@ static int open_attempt(IptvitaAvcDecoder *d,int width,int height,int references
  if(w*h/256u>3600)return -2;
  if(references<2)references=2;
  if(references>8)references=8;
+ /* Match the public decoder's 18000-macroblock reference-picture budget.
+  * Requesting more can poison its subsequent first-frame call with 0x80620002. */
+ unsigned mbs=(w/16u)*(h/16u);
+ int cap=mbs?(int)(18000u/mbs):2;
+ if(cap<2)cap=2;
+ if(references>cap)references=cap;
  /* AVCDEC lives in the Vita firmware; failure to load a separate sysmodule
   * is not necessarily fatal. The library call below is authoritative. */
  sceSysmoduleLoadModule(SCE_SYSMODULE_AVCDEC);
@@ -94,8 +108,11 @@ static int open_attempt(IptvitaAvcDecoder *d,int width,int height,int references
   void *picbase=NULL;
   ret=sceKernelGetMemBlockBase(uid,&picbase);
   if(ret<0){sceKernelFreeMemBlock(uid);goto error;}
+  got=sceGxmMapMemory(picbase,picbytes,SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE);
+  if(got<0){sceKernelFreeMemBlock(uid);ret=got;goto error;}
   d->picture_uid[i]=uid;
   d->picture_data[i]=(unsigned char*)picbase;
+  d->picture_mapped[i]=1;
   d->picture_count++;
  }
  return 0;
@@ -112,6 +129,12 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
  if(!d)return -1;
  if(references<2)references=2;
  if(references>8)references=8;
+ unsigned aw=align16((unsigned)width),ah=align16((unsigned)height);
+ if(width<16 || height<16 || width>1280 || height>720)return -2;
+ unsigned mbs=(aw/16u)*(ah/16u);
+ int cap=mbs?(int)(18000u/mbs):2;
+ if(cap<2)cap=2;
+ if(references>cap)references=cap;
  int rc=-1;
  for(int refs=references;refs>=2;refs--) {
   rc=open_attempt(d,width,height,refs);
