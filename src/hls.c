@@ -50,6 +50,28 @@ int iptvita_hls_inspect_next(const char *text,const char *base,IptvitaHlsInfo *o
     if(sscanf(res+11,"%dx%d",&w,&h)==2 && w>0 && h>0)pending_height=h;
    }
   }
+  else if(n>=13 && !strncmp(s,"#EXT-X-MEDIA:",13)) {
+   /* Some film channels keep video and audio in separate HLS renditions.
+    * Prefer a DEFAULT=YES audio URI while retaining first valid fallback. */
+   if(n<IPTVITA_HLS_URL_MAX) {
+    char attrs[IPTVITA_HLS_URL_MAX];
+    memcpy(attrs,s,n);attrs[n]=0;
+    if(strstr(attrs,"TYPE=AUDIO")) {
+     const char *uri=strstr(attrs,"URI=\"");
+     if(uri) {
+      uri+=5;const char *end=strchr(uri,'"');
+      if(end && (size_t)(end-uri)<IPTVITA_HLS_URL_MAX) {
+       char ref[IPTVITA_HLS_URL_MAX];
+       size_t rlen=(size_t)(end-uri);
+       memcpy(ref,uri,rlen);ref[rlen]=0;
+       if(!out->audio_media[0] || strstr(attrs,"DEFAULT=YES")) {
+        if(resolve(base,ref,out->audio_media,sizeof(out->audio_media))<0)return -3;
+       }
+      }
+     }
+    }
+   }
+  }
   else if(n>=22 && !strncmp(s,"#EXT-X-MEDIA-SEQUENCE:",22)) {
    unsigned long long value=0;
    if(sscanf(s+22,"%llu",&value)==1)sequence=value;
