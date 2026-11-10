@@ -13,6 +13,7 @@ static unsigned char *rgba;
 static size_t rgba_size;
 static vita2d_texture *texture;
 static IptvitaPreviewStats st;
+static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 #define FRAME_QUEUE 120
 #define QUEUE_BYTES (12u*1024u*1024u)
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
@@ -37,22 +38,36 @@ void iptvita_preview_reset(void)
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
  free(rgba);rgba=NULL;rgba_size=0;
  memset(&st,0,sizeof st);
+ wait_for_idr=1;recovery_attempts=0;reference_frames=4;
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
- (void)key;
  if(!data || !size)return;
- if(!open && st.decode_error==0) {
+ /* Never start the hardware on an arbitrary P or B frame of a live stream.
+  * Wait for a random-access (IDR) picture after tuning or after recovery. */
+ if(wait_for_idr && !key)return;
+ if(!open) {
   int w=0,h=0;
-  if(iptvita_h264_dimensions(data,size,&w,&h)<0)return;
+  if(iptvita_h264_dimensions(data,size,&w,&h)<0) {
+   /* On recovery, some encoders send SPS/PPS only at playlist boundaries. */
+   w=st.width;h=st.height;
+   if(!w || !h)return;
+  }
   if(w>1280 || h>720){st.decode_error=-30;return;}
-  int rc=iptvita_avc_open(&dec,w,h,4);
+  int rc=iptvita_avc_open(&dec,w,h,reference_frames);
   if(rc<0){st.decode_error=rc;return;}
   size_t stride=(size_t)((w+15)&~15);
   size_t lines=(size_t)((h+15)&~15);
-  rgba_size=stride*lines*4u;
-  rgba=(unsigned char*)malloc(rgba_size);
-  texture=vita2d_create_empty_texture((unsigned)w,(unsigned)h);
+  size_t needed=stride*lines*4u;
+  if(rgba_size<needed || st.width!=w || st.height!=h) {
+   free(rgba);rgba=NULL;rgba_size=0;
+   if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
+  }
+  if(!rgba) {
+   rgba=(unsigned char*)malloc(needed);
+   if(rgba)rgba_size=needed;
+  }
+  if(!texture)texture=vita2d_create_empty_texture((unsigned)w,(unsigned)h);
   if(!rgba || !texture) {
    st.decode_error=-31;
    iptvita_avc_close(&dec);
@@ -63,19 +78,34 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   st.width=w;st.height=h;
   open=1;
  }
- if(!open)return;
  st.submitted++;
  int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size);
- if(rc<0){st.decode_error=rc;return;}
+ if(rc<0) {
+  st.decode_error=rc;
+  unsigned error=(unsigned)rc;
+  if((error==0x80620009u || error==0x80620007u ||
+      error==0x80620809u || error==0x80620807u) &&
+      recovery_attempts<2) {
+   /* Reinitialize on the next IDR with room for more reference pictures.
+    * Live streams can require more than four reference frames. */
+   iptvita_avc_close(&dec);
+   open=0;
+   wait_for_idr=1;
+   recovery_attempts++;
+   reference_frames=recovery_attempts==1?6:8;
+  }
+  return;
+ }
+ wait_for_idr=0;
+ st.decode_error=0;
  if(rc==0)return;
  st.decoded++;
- /* Copy only visible pixels; Vita2D owns its own GPU texture stride. */
  unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
- unsigned stride=vita2d_texture_get_stride(texture);
+ unsigned dst_stride=vita2d_texture_get_stride(texture);
  unsigned src_stride=(unsigned)((st.width+15)&~15)*4u;
- if(!dst || stride<(unsigned)st.width*4u){st.decode_error=-32;return;}
+ if(!dst || dst_stride<(unsigned)st.width*4u){st.decode_error=-32;return;}
  for(int y=0;y<st.height;y++)
-  memcpy(dst+(size_t)y*stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
+  memcpy(dst+(size_t)y*dst_stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
