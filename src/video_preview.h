@@ -1,0 +1,13 @@
+#ifndef IPTVITA_VIDEO_PREVIEW_H
+#define IPTVITA_VIDEO_PREVIEW_H
+#include <stddef.h>
+#include <stdint.h>
+typedef struct {
+ int width,height,decode_error;
+ unsigned decoded,submitted;
+} IptvitaPreviewStats;
+void iptvita_preview_reset(void);
+void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
+IptvitaPreviewStats iptvita_preview_stats(void);
+void iptvita_preview_draw(int x,int y,int width,int height);
+#endif
