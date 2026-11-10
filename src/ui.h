@@ -20,6 +20,7 @@ typedef struct {
     int card_index;
     int settings_index;
     int theme;
+    int language; /* 0 = pt-BR (default), 1 = English */
     int show_dialog;
     int quit_confirm;
 } IptvitaUi;
