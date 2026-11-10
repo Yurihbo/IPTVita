@@ -10,6 +10,8 @@ typedef struct {
  int iv_explicit;
  unsigned long long media_sequence;
  char key_url[IPTVITA_HLS_URL_MAX];
+ /* Optional independent audio rendition advertised by an HLS master. */
+ char audio_media[IPTVITA_HLS_URL_MAX];
  char first_media[IPTVITA_HLS_URL_MAX];
 } IptvitaHlsInfo;
 /* Inspect HLS text without downloading or decoding video. */
