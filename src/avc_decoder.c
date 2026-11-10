@@ -9,7 +9,7 @@ void iptvita_avc_close(IptvitaAvcDecoder *d)
 {
  if(!d)return;
  if(d->decoder_open)sceAvcdecDeleteDecoder(&d->ctrl);
- for(unsigned i=0;i<4;i++)if(d->picture_uid[i]>=0)sceKernelFreeMemBlock(d->picture_uid[i]);
+ for(unsigned i=0;i<8;i++)if(d->picture_uid[i]>=0)sceKernelFreeMemBlock(d->picture_uid[i]);
  if(d->es_uid>=0)sceKernelFreeMemBlock(d->es_uid);
  d->es_uid=-1;d->es_data=NULL;d->es_capacity=0;
  d->picture_count=0;
@@ -24,7 +24,7 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
 {
  if(!d)return -1;
  memset(d,0,sizeof(*d));d->frame_uid=-1;d->es_uid=-1;
- for(unsigned i=0;i<4;i++)d->picture_uid[i]=-1;
+ for(unsigned i=0;i<8;i++)d->picture_uid[i]=-1;
  if(width<16 || height<16 || width>1280 || height>720)return -2;
  unsigned w=align16((unsigned)width),h=align16((unsigned)height);
  if(w*h/256u>3600)return -2;
@@ -75,10 +75,10 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
  if(ret<0)goto error;
  d->es_data=(unsigned char*)esbase;d->es_capacity=es_alloc;
  unsigned picbytes=(w*h*4u+262143u)&~262143u;
- for(unsigned i=0;i<4;i++) {
+ for(unsigned i=0;i<8;i++) {
   SceUID uid=sceKernelAllocMemBlock("iptvita_avc_picture",SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,picbytes,NULL);
   if(uid<0) {
-   if(i<3){ret=uid;goto error;}
+   if(i<5){ret=uid;goto error;}
    break;
   }
   void *picbase=NULL;
@@ -104,9 +104,9 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  unsigned w=align16((unsigned)d->width),h=align16((unsigned)d->height);
  if(rgba_capacity<(size_t)w*h*4u)return -2;
  SceAvcdecAu access;
- SceAvcdecPicture picture[4],*pictures[4];
+ SceAvcdecPicture picture[8],*pictures[8];
  SceAvcdecArrayPicture output;
- if(!d->es_data || size>d->es_capacity || d->picture_count<3)return -3;
+ if(!d->es_data || size>d->es_capacity || d->picture_count<5)return -3;
  memcpy(d->es_data,bytes,size);
  memset(&access,0,sizeof(access));
  memset(picture,0,sizeof(picture));
