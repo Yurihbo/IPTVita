@@ -57,6 +57,7 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  ui->stream_has_sequence=0;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
  ui->stream_video_pid=-1;
+ ui->stream_audio_pid=-1;ui->stream_audio_type=0;
  ui->stream_decode_error=0;ui->stream_decoded_frames=0;
  ui->stream_video_width=ui->stream_video_height=0;
  iptvita_preview_reset();
@@ -186,6 +187,8 @@ static void inspect_ts(IptvitaUi *ui)
  ui->stream_packets=pipeline.transport.packets;
  ui->stream_nals=pipeline.transport.h264_nal_units;
  ui->stream_video_pid=pipeline.transport.video_pid;
+ ui->stream_audio_pid=pipeline.transport.audio_pid;
+ ui->stream_audio_type=pipeline.transport.audio_type;
  IptvitaPreviewStats stats=iptvita_preview_stats();
  ui->stream_decode_error=stats.decode_error;
  ui->stream_decoded_frames=stats.decoded;
