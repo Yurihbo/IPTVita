@@ -31,6 +31,11 @@ typedef struct {
     int channel_details;
     int player_probe_result;
     int player_probe_target;
+    int stream_stage; /* 0 idle, 1 master/media playlist, 2 variant, 3 TS segment, 4 completed, negative error */
+    int stream_status;
+    unsigned stream_packets,stream_nals,stream_frames;
+    int stream_video_pid;
+    char stream_url[2048];
     int source_index;
     IptvitaPlaylist playlist;
     int list_index;
