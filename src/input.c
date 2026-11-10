@@ -1,4 +1,5 @@
 #include "input.h"
+#include "keyboard.h"
 #include <psp2/ctrl.h>
 #include <string.h>
 #include <stdio.h>
@@ -34,6 +35,7 @@ static void begin_edit(IptvitaUi *ui, int index, int type)
     ui->editing=1;
     ui->edit_field=0;
     ui->keyboard_index=0;
+    ui->grid_keyboard=0;
     ui->save_status=0;
 }
 static void finish_edit(IptvitaUi *ui)
@@ -53,21 +55,26 @@ static void finish_edit(IptvitaUi *ui)
 static void editor_input(IptvitaUi *ui,unsigned int pressed)
 {
     if(pressed&SCE_CTRL_CIRCLE) { ui->editing=0; ui->save_status=0; return; }
+    if(pressed&SCE_CTRL_SELECT) { ui->grid_keyboard=!ui->grid_keyboard; return; }
     if(pressed&SCE_CTRL_TRIANGLE) { finish_edit(ui); return; }
     int fields=ui->draft.type==1 ? 4 : 2;
     if(pressed&SCE_CTRL_LTRIGGER) ui->edit_field=(ui->edit_field+fields-1)%fields;
     if(pressed&SCE_CTRL_RTRIGGER) ui->edit_field=(ui->edit_field+1)%fields;
-    if(pressed&SCE_CTRL_LEFT) ui->keyboard_index=(ui->keyboard_index+KEY_COUNT-1)%KEY_COUNT;
-    if(pressed&SCE_CTRL_RIGHT) ui->keyboard_index=(ui->keyboard_index+1)%KEY_COUNT;
-    if(pressed&SCE_CTRL_UP) ui->keyboard_index=(ui->keyboard_index+KEY_COUNT-KEY_COLS)%KEY_COUNT;
-    if(pressed&SCE_CTRL_DOWN) ui->keyboard_index=(ui->keyboard_index+KEY_COLS)%KEY_COUNT;
+    if(ui->grid_keyboard && (pressed&SCE_CTRL_LEFT)) ui->keyboard_index=(ui->keyboard_index+KEY_COUNT-1)%KEY_COUNT;
+    if(ui->grid_keyboard && (pressed&SCE_CTRL_RIGHT)) ui->keyboard_index=(ui->keyboard_index+1)%KEY_COUNT;
+    if(ui->grid_keyboard && (pressed&SCE_CTRL_UP)) ui->keyboard_index=(ui->keyboard_index+KEY_COUNT-KEY_COLS)%KEY_COUNT;
+    if(ui->grid_keyboard && (pressed&SCE_CTRL_DOWN)) ui->keyboard_index=(ui->keyboard_index+KEY_COLS)%KEY_COUNT;
     size_t cap=0;
     char *dst=field(ui,&cap);
     size_t n=strlen(dst);
     if((pressed&SCE_CTRL_SQUARE) && n) dst[n-1]=0;
-    if((pressed&SCE_CTRL_CROSS) && n+1<cap) {
-        dst[n]=keys[ui->keyboard_index];
-        dst[n+1]=0;
+    if(pressed&SCE_CTRL_CROSS) {
+        if(ui->grid_keyboard) {
+            if(n+1<cap) { dst[n]=keys[ui->keyboard_index]; dst[n+1]=0; }
+        } else {
+            int result=iptvita_keyboard_edit(dst,cap,ui->edit_field==1,ui->edit_field==3,ui->language);
+            if(result==-1) ui->grid_keyboard=1; /* IME unavailable or text too long */
+        }
     }
     ui->save_status=0;
 }
