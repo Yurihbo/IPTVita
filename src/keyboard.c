@@ -1,5 +1,6 @@
 #include "keyboard.h"
 #include <psp2/libime.h>
+#include <psp2/sysmodule.h>
 #include <psp2/kernel/threadmgr.h>
 #include <string.h>
 #include <stdint.h>
@@ -80,6 +81,7 @@ int iptvita_keyboard_edit(char *text,size_t capacity,int is_url,int is_password,
     param.supportedLanguages=language?SCE_IME_LANGUAGE_ENGLISH:SCE_IME_LANGUAGE_PORTUGUESE_BR;
     param.languagesForced=0;
     (void)is_password;
+    if(sceSysmoduleLoadModule(SCE_SYSMODULE_IME)<0) return -1;
     if(sceImeOpen(&param)<0) return -1;
     /* Native IME runs on the system overlay; no additional UI textures. */
     while(!finished) {
