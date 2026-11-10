@@ -133,10 +133,12 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  output.numOfElm=outputs;
  output.pPicture=pictures;
  int rc=sceAvcdecDecode(&d->ctrl,&access,&output);
+ /* The codec may retain an output slot even while returning zero pictures.
+  * Rotate submitted slots on every AU, not just successful output. */
+ d->slot=(d->slot+outputs)%d->picture_count;
  if(rc<0)return rc;
  if(!output.numOfOutput)return 0;
  if(output.numOfOutput>outputs)return -4;
  memcpy(rgba,picture[output.numOfOutput-1].frame.pPicture[0],(size_t)w*h*4u);
- d->slot=(d->slot+output.numOfOutput)%d->picture_count;
  return 1;
 }
