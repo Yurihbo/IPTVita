@@ -1,7 +1,7 @@
 #ifndef IPTVITA_SOURCES_H
 #define IPTVITA_SOURCES_H
 #define IPTVITA_MAX_SOURCES 16
-#define IPTVITA_URL_MAX 4096
+#define IPTVITA_URL_MAX 8192
 #define IPTVITA_NAME_MAX 48
 #define IPTVITA_USER_MAX 96
 typedef struct {
