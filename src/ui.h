@@ -32,6 +32,8 @@ typedef struct {
     int player_probe_result;
     int player_probe_target;
     int stream_paused;
+    unsigned long long stream_last_sequence,stream_selected_sequence;
+    int stream_has_sequence;
     unsigned long long stream_refresh_at;
     char stream_media_url[8192];
     char stream_last_segment[8192];
