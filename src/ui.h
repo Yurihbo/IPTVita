@@ -31,6 +31,7 @@ typedef struct {
     int channel_details;
     int player_probe_result;
     int player_probe_target;
+    int stream_info_visible; /* R1 toggles stream diagnostics; default on details view */
     int stream_stage; /* 0 idle, 1 master/media playlist, 2 variant, 3 TS segment, 4 completed, negative error */
     int stream_status;
     int stream_http;
