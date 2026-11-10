@@ -2,9 +2,16 @@
 #define IPTVITA_AVC_DECODER_H
 #include <psp2/videodec.h>
 #include <psp2/types.h>
+#include <stddef.h>
+#include <stdint.h>
 typedef struct {
  SceAvcdecCtrl ctrl;
  SceUID frame_uid;
+ SceUID es_uid;
+ SceUID picture_uid[4];
+ unsigned char *es_data,*picture_data[4];
+ unsigned picture_count,slot;
+ size_t es_capacity;
  int library_open,decoder_open;
  int width,height;
 } IptvitaAvcDecoder;
