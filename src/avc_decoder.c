@@ -29,7 +29,7 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
  unsigned w=align16((unsigned)width),h=align16((unsigned)height);
  if(w*h/256u>3600)return -2;
  if(references<2)references=2;
- if(references>4)references=4;
+ if(references>8)references=8;
  /* AVCDEC lives in the Vita firmware; failure to load a separate sysmodule
   * is not necessarily fatal. The library call below is authoritative. */
  sceSysmoduleLoadModule(SCE_SYSMODULE_AVCDEC);
