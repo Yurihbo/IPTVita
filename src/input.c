@@ -1,6 +1,7 @@
 #include "input.h"
 #include "keyboard.h"
 #include "network.h"
+#include "player.h"
 #include <psp2/ctrl.h>
 #include <string.h>
 #include <stdio.h>
@@ -96,10 +97,14 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
     }
     if(ui->browsing) {
         if(pressed&SCE_CTRL_CIRCLE) {if(ui->channel_details) ui->channel_details=0;else ui->browsing=0;return 0;}
-        if(ui->channel_details) return 0;
+        if(ui->channel_details) {
+            if((pressed&SCE_CTRL_TRIANGLE) && ui->playlist.count>0)
+                ui->player_probe_result=iptvita_player_probe(ui->playlist.channels[ui->channel_index].url);
+            return 0;
+        }
         if((pressed&SCE_CTRL_UP) && ui->channel_index>0) --ui->channel_index;
         if((pressed&SCE_CTRL_DOWN) && ui->channel_index+1<ui->playlist.count) ++ui->channel_index;
-        if((pressed&SCE_CTRL_CROSS) && ui->playlist.count>0) ui->channel_details=1;
+        if((pressed&SCE_CTRL_CROSS) && ui->playlist.count>0) {ui->channel_details=1;ui->player_probe_result=0;}
         return 0;
     }
     if(pressed&SCE_CTRL_START) { ui->quit_confirm=1; return 0; }
