@@ -242,6 +242,7 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         const char *pt=ui->playlist.status==-1?"ERRO AO LER ARQUIVO":
             ui->playlist.status==-2?"M3U INVALIDA OU VAZIA":
             ui->playlist.status==-4?"CAMINHO LOCAL INVALIDO":
+            ui->playlist.status==-8?"URL M3U EXCEDE 8191 CARACTERES":
             ui->playlist.status==-5?"PLAYLIST MAIOR QUE 4 MB":
             ui->playlist.status==-6?"ERRO HTTP DO SERVIDOR":
             ui->playlist.status==-7?"FALHA DE REDE OU HTTPS":
@@ -253,6 +254,7 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         const char *en=ui->playlist.status==-1?"FILE READ ERROR":
             ui->playlist.status==-2?"INVALID OR EMPTY M3U":
             ui->playlist.status==-4?"INVALID LOCAL PATH":
+            ui->playlist.status==-8?"M3U URL EXCEEDS 8191 CHARACTERS":
             ui->playlist.status==-5?"PLAYLIST EXCEEDS 4 MB":
             ui->playlist.status==-6?"HTTP SERVER ERROR":
             ui->playlist.status==-7?"NETWORK OR HTTPS ERROR":
@@ -291,7 +293,13 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
                          strstr(url,".mp4")?"MP4":strstr(url,".ts")?"MPEG-TS":"FORMATO A IDENTIFICAR";
         label(265,208,kind,3,p.accent);
         label(265,256,tr(ui,"URL DO STREAM:","STREAM URL:"),2,p.muted);
-        clipped(265,284,url,82,2,p.white);
+        /* Long signed URLs stay intact in memory; only a small tail is shown. */
+        size_t url_len=strlen(url);
+        const char *shown=url+(url_len>65?url_len-65:0);
+        clipped(265,284,shown,65,2,p.white);
+        char url_info[64];
+        snprintf(url_info,sizeof(url_info),"URL: %u / 8191 BYTES",(unsigned)url_len);
+        label(265,311,url_info,2,p.muted);
         label(265,365,tr(ui,"TRI TESTAR HLS / QUAD MP4 LOCAL","TRI TEST HLS / SQUARE LOCAL MP4"),2,p.accent);
         if(ui->stream_stage) {
             char line[120];
