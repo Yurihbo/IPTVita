@@ -36,10 +36,13 @@ typedef struct {
     int edit_field;
     int keyboard_index;
     int grid_keyboard;
+    int keyboard_upper;
     int save_status;
     IptvitaSource draft;
     IptvitaSources sources;
 } IptvitaUi;
 
+void iptvita_ui_font_init(void);
+void iptvita_ui_font_fini(void);
 void iptvita_ui_render(const IptvitaUi *ui);
 #endif
