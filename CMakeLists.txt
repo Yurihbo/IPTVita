@@ -41,6 +41,8 @@ add_executable(IPTVita.elf
   src/hls.c
   src/ts_pipeline.c
   src/pes_assembler.c
+  src/h264_au.c
+  src/video_pipeline.c
   src/tls.c
   src/vita_entropy.c
 )
