@@ -61,3 +61,10 @@ Entries are stored locally in `ux0:data/IPTVita/sources.bin`. No passwords are u
 
 ### Planned favorites behavior
 When video playback is implemented, **START while watching a channel** will toggle its favorite status. Each playlist will have its own **Favorites** tab, with favorites stored by source identity and channel identity. START in menus retains the exit confirmation; playback will have its own controller context. This is planned, not yet implemented.
+
+## Stage 3.1 usability adjustments
+
+- Triangle saves the source editor; Square erases a character. In the saved-source list, Square deletes the selected entry.
+- The controller character grid now supports touch selection, left analog stick and auto-repeat while holding the D-pad or analog direction.
+- Smaller, lighter pixel text in headings, menus and source cards.
+- The Vita's native on-screen IME keyboard is planned as a further improvement; the current build retains the touch/controller grid. The source list is not yet a channel browser: playback and playlist parsing belong to Stage 4.
