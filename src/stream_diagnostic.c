@@ -133,16 +133,37 @@ static void inspect_playlist(IptvitaUi *ui)
  text[n]=0;
  IptvitaHlsInfo *info=(IptvitaHlsInfo*)malloc(sizeof(*info));
  if(!info){free(text);fail(ui,-12);return;}
+ int alternate=ui->stream_stage==7;
  int rc=iptvita_hls_inspect_next(text,ui->stream_url,info,
-       ui->stream_last_sequence,ui->stream_has_sequence && ui->stream_stage==2);
+       alternate?ui->stream_alt_audio_last_sequence:ui->stream_last_sequence,
+       alternate?ui->stream_alt_audio_has_sequence:
+          (ui->stream_has_sequence && ui->stream_stage==2));
  free(text);
  if(rc<0){free(info);fail(ui,-10);return;}
- if(info->cipher_method==2){free(info);fail(ui,-23);return;}
+ if(info->cipher_method==2) {
+  free(info);
+  if(alternate) {
+   ui->stream_alt_audio_list_url[0]=0;
+   ui->stream_stage=5;
+   ui->stream_refresh_at=now_us()+200000ULL;
+  }else fail(ui,-23);
+  return;
+ }
  char next[IPTVITA_HLS_URL_MAX];
  snprintf(next,sizeof(next),"%s",info->first_media);
  int master=info->is_master;
  int cipher=info->cipher_method;
- if(!master) {
+ if(master && info->audio_media[0]) {
+  snprintf(ui->stream_alt_audio_list_url,sizeof(ui->stream_alt_audio_list_url),
+           "%s",info->audio_media);
+ }
+ if(!master && alternate) {
+  ui->stream_alt_audio_cipher=cipher;
+  ui->stream_alt_audio_selected_sequence=info->media_sequence;
+  memcpy(ui->stream_alt_audio_iv,info->iv,16);
+  snprintf(ui->stream_alt_audio_key_url,sizeof(ui->stream_alt_audio_key_url),
+           "%s",info->key_url);
+ }else if(!master) {
   ui->stream_cipher_method=cipher;
   ui->stream_selected_sequence=info->media_sequence;
   memcpy(ui->stream_iv,info->iv,16);
@@ -150,15 +171,19 @@ static void inspect_playlist(IptvitaUi *ui)
  }
  free(info);
  if(!next[0]) {
+  if(alternate) {
+   ui->stream_stage=5;ui->stream_refresh_at=now_us()+350000ULL;
+   return;
+  }
   if(!master && ui->stream_has_sequence) {
    ui->stream_stage=5;ui->stream_refresh_at=now_us()+500000ULL;
    return;
   }
   fail(ui,-14);return;
  }
- int stage=master?2:3;
- if(ui->stream_stage==2 && master){fail(ui,-14);return;}
- if(!master) {
+ int stage=master?2:(alternate?8:3);
+ if((ui->stream_stage==2 || alternate) && master){fail(ui,-14);return;}
+ if(!master && !alternate) {
   strncpy(ui->stream_media_url,ui->stream_url,sizeof(ui->stream_media_url)-1);
   ui->stream_media_url[sizeof(ui->stream_media_url)-1]=0;
   if(strcmp(next,ui->stream_last_segment)==0) {
@@ -167,7 +192,20 @@ static void inspect_playlist(IptvitaUi *ui)
    return;
   }
  }
- if(!master && cipher==1) {
+ if(alternate) {
+  if(cipher==1) {
+   if(!ui->stream_alt_audio_key_url[0]) {
+    ui->stream_stage=5;
+    ui->stream_alt_audio_list_url[0]=0;
+    return;
+   }
+   snprintf(ui->stream_alt_audio_segment_url,sizeof(ui->stream_alt_audio_segment_url),"%s",next);
+   if(ui->stream_alt_audio_key_valid &&
+      strcmp(ui->stream_alt_audio_key_url,ui->stream_alt_audio_cached_key_url)==0)
+     rc=schedule(ui,next,8);
+   else rc=schedule(ui,ui->stream_alt_audio_key_url,9);
+  }else rc=schedule(ui,next,8);
+ }else if(!master && cipher==1) {
   if(!ui->stream_key_url[0]){fail(ui,-24);return;}
   snprintf(ui->stream_segment_url,sizeof(ui->stream_segment_url),"%s",next);
   if(ui->stream_key_valid &&
