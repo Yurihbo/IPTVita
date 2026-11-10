@@ -14,6 +14,7 @@ static size_t rgba_size;
 static vita2d_texture *texture;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
+static int decoder_fatal;
 #define FRAME_QUEUE 120
 #define QUEUE_BYTES (12u*1024u*1024u)
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
@@ -38,12 +39,12 @@ void iptvita_preview_reset(void)
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
  free(rgba);rgba=NULL;rgba_size=0;
  memset(&st,0,sizeof st);
- wait_for_idr=1;recovery_attempts=0;reference_frames=4;
+ wait_for_idr=1;recovery_attempts=0;reference_frames=4;decoder_fatal=0;
  st.waiting_for_idr=1;
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
- if(!data || !size)return;
+ if(!data || !size || decoder_fatal)return;
  /* Never start the hardware on an arbitrary P or B frame of a live stream.
   * Wait for a random-access (IDR) picture after tuning or after recovery. */
  if(wait_for_idr && !key){st.dropped++;return;}
@@ -108,6 +109,16 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    reference_frames=memory_error?
        (recovery_attempts==1?6:8):
        (recovery_attempts==1?3:2);
+  } else {
+   /* Avoid infinite decode loops and unbounded compressed frame churn.
+    * Keep the exact SDK error visible until the channel is reopened. */
+   decoder_fatal=1;
+   while(count) {
+    free(frames[head].data);
+    head=(head+1)%FRAME_QUEUE;
+    count--;
+   }
+   total_bytes=0;tail=head;st.queued=0;
   }
   return;
  }
@@ -126,7 +137,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
- if(!data || !size || size>IPTVITA_H264_AU_MAX)return;
+ if(!data || !size || size>IPTVITA_H264_AU_MAX || decoder_fatal)return;
  if(key)st.keyframes++;
  if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;return;}
  unsigned char *copy=(unsigned char*)malloc(size);
