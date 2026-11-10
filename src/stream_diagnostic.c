@@ -45,7 +45,7 @@ static int schedule(IptvitaUi *ui,const char *url,int stage)
 int iptvita_stream_start(IptvitaUi *ui,const char *url)
 {
  if(!ui || !url || !url[0])return -1;
- if((ui->stream_stage>=1 && ui->stream_stage<=3) || ui->stream_stage==5)return -2;
+ if((ui->stream_stage>=1 && ui->stream_stage<=3) || ui->stream_stage==5 || ui->stream_stage==6)return -2;
  close_pipeline();
  ui->stream_paused=0;ui->stream_media_url[0]=0;
  ui->stream_cipher_method=0;
