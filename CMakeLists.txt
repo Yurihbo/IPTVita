@@ -41,6 +41,7 @@ target_link_libraries(IPTVita.elf
   vita2d
   SceCtrl_stub
   SceTouch_stub
+  ScePgf_stub
   SceIme_stub
   SceIofilemgr_stub
   SceNet_stub
