@@ -3,6 +3,7 @@
 #include "hls.h"
 #include "video_pipeline.h"
 #include "video_preview.h"
+#include "aac_audio.h"
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
@@ -16,6 +17,7 @@ static void close_pipeline(void)
 {
  if(!pipeline_open)return;
  iptvita_video_close(&pipeline);
+ iptvita_audio_stop();
  pipeline_open=0;
 }
 static void count_frame(void *user,const unsigned char *data,size_t size,
@@ -51,6 +53,7 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  ui->stream_decode_error=0;ui->stream_decoded_frames=0;
  ui->stream_video_width=ui->stream_video_height=0;
  iptvita_preview_reset();
+ iptvita_audio_start();
  ui->stream_http=0;ui->stream_net_error=0;
  int ts=strstr(url,".ts")!=NULL && !strstr(url,".m3u8");
  int result=schedule(ui,url,ts?3:1);
@@ -110,6 +113,7 @@ static void inspect_ts(IptvitaUi *ui)
  }
  if(bytes<0 && ui->stream_stage==3)fail(ui,-15);
  if(ui->stream_stage==3 && pipeline.video_pid>=0) {
+  if(pipeline.audio_pid>=0)iptvita_pes_flush(&pipeline.audio_pes);
   iptvita_pes_flush(&pipeline.video_pes);
   iptvita_h264_au_flush(&pipeline.video_au);
  }
