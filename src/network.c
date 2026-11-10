@@ -11,6 +11,7 @@
 #include <string.h>
 
 #define CACHE_PATH "ux0:data/IPTVita/online.m3u"
+#define CA_BUNDLE_PATH "app0:cacert.pem"
 #define MAX_BYTES (4u*1024u*1024u)
 static char url_copy[4096];
 static volatile int state;
@@ -62,7 +63,8 @@ static int download_thread(SceSize args,void *argp)
  curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
  curl_easy_setopt(curl,CURLOPT_CONNECTTIMEOUT,12L);
  curl_easy_setopt(curl,CURLOPT_TIMEOUT,50L);
- curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.0");
+ curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.5.3");
+ curl_easy_setopt(curl,CURLOPT_CAINFO,CA_BUNDLE_PATH);
  curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,write_file);
  curl_easy_setopt(curl,CURLOPT_WRITEDATA,&d);
  curl_easy_setopt(curl,CURLOPT_SSL_VERIFYPEER,1L);
