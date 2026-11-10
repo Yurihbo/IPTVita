@@ -38,6 +38,7 @@ static void begin_edit(IptvitaUi *ui, int index, int type)
     ui->edit_field=0;
     ui->keyboard_index=0;
     ui->grid_keyboard=0;
+    ui->keyboard_upper=0;
     ui->save_status=0;
 }
 static void finish_edit(IptvitaUi *ui)
@@ -58,6 +59,7 @@ static void editor_input(IptvitaUi *ui,unsigned int pressed)
 {
     if(pressed&SCE_CTRL_CIRCLE) { ui->editing=0; ui->save_status=0; return; }
     if(pressed&SCE_CTRL_SELECT) { ui->grid_keyboard=!ui->grid_keyboard; return; }
+    if(pressed&SCE_CTRL_START) { ui->keyboard_upper=!ui->keyboard_upper; return; }
     if(pressed&SCE_CTRL_TRIANGLE) { finish_edit(ui); return; }
     int fields=ui->draft.type==1 ? 4 : 2;
     if(pressed&SCE_CTRL_LTRIGGER) ui->edit_field=(ui->edit_field+fields-1)%fields;
@@ -72,7 +74,7 @@ static void editor_input(IptvitaUi *ui,unsigned int pressed)
     if((pressed&SCE_CTRL_SQUARE) && n) dst[n-1]=0;
     if(pressed&SCE_CTRL_CROSS) {
         if(ui->grid_keyboard) {
-            if(n+1<cap) { dst[n]=keys[ui->keyboard_index]; dst[n+1]=0; }
+            if(n+1<cap) { char key=keys[ui->keyboard_index]; if(ui->keyboard_upper && key>='a' && key<='z') key=(char)(key-'a'+'A'); dst[n]=key; dst[n+1]=0; }
         } else {
             int result=iptvita_keyboard_begin(dst,cap,ui->edit_field==1,ui->edit_field==3,ui->language);
             if(result==-1) ui->grid_keyboard=1; /* IME unavailable or text too long */
