@@ -36,20 +36,22 @@ static void parse_pmt(IptvitaTsPipeline *p,const unsigned char *s,size_t n)
  size_t info=(((size_t)s[10]&15)<<8)|s[11];
  size_t pos=12+info,end=n-4;
  if(pos>end)return;
+ /* PMT can change when a live channel inserts or leaves an advert.
+  * Refresh elementary-stream PIDs instead of retaining stale ones. */
+ int video_pid=-1,audio_pid=-1,video_type=0,audio_type=0;
  while(pos+5<=end) {
   int type=s[pos],pid=((s[pos+1]&31)<<8)|s[pos+2];
   size_t esinfo=(((size_t)s[pos+3]&15)<<8)|s[pos+4];
-  if(type==0x1b && p->video_pid<0) {p->video_pid=pid;p->video_type=type;}
-  /* Prefer ADTS AAC if multiple audio elementary streams are advertised.
-   * Other formats require a separate decoder and should not mask the
-   * playable AAC track. */
+  if(type==0x1b && video_pid<0){video_pid=pid;video_type=type;}
   if((type==0x0f || type==0x11 || type==0x03 || type==0x04) &&
-     (p->audio_pid<0 || (type==0x0f && p->audio_type!=0x0f))) {
-   p->audio_pid=pid;p->audio_type=type;
+     (audio_pid<0 || (type==0x0f && audio_type!=0x0f))){
+   audio_pid=pid;audio_type=type;
   }
   if(pos+5+esinfo>end)break;
   pos+=5+esinfo;
  }
+ p->video_pid=video_pid;p->video_type=video_type;
+ p->audio_pid=audio_pid;p->audio_type=audio_type;
 }
 static void pes_start(IptvitaTsPipeline *p,const unsigned char *data,size_t n,int video)
 {
