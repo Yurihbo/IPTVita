@@ -67,6 +67,7 @@ int iptvita_keyboard_begin(char *text,size_t capacity,int is_url,int is_password
     memset(input,0,sizeof(input));
     memset(initial,0,sizeof(initial));
     to_utf16(text,initial,2049);
+    memcpy(input,initial,sizeof(initial));
     SceImeParam param;
     sceImeParamInit(&param);
     param.work=work;
