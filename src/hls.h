@@ -4,6 +4,12 @@
 #define IPTVITA_HLS_URL_MAX 8192
 typedef struct {
  int is_hls, is_master, encrypted, segments, variants;
+ /* 0 none, 1 AES-128 full-segment encryption, 2 unsupported/DRM */
+ int cipher_method;
+ unsigned char iv[16];
+ int iv_explicit;
+ unsigned long long media_sequence;
+ char key_url[IPTVITA_HLS_URL_MAX];
  char first_media[IPTVITA_HLS_URL_MAX];
 } IptvitaHlsInfo;
 /* Inspect HLS text without downloading or decoding video. */
