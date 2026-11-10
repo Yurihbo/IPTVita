@@ -150,7 +150,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.3.4",2,p.muted);
+    label(24,511,"IPTVITA  V0.4.0",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -174,7 +174,7 @@ static void home(const IptvitaUi *ui, Palette p)
     label(277,327,total,7,p.white);
     label(278,395,tr(ui,"FONTES SALVAS","SAVED SOURCES"),2,p.muted);
     label(617,338,"HLS  AES-128",3,p.white);
-    label(617,387,tr(ui,"PREVISTO NA ETAPA 4","PLANNED FOR STAGE 4"),2,p.muted);
+    label(617,387,tr(ui,"EM DESENVOLVIMENTO","IN DEVELOPMENT"),2,p.muted);
     label(252,488,tr(ui,"L/R TELAS  /  X SELECIONAR  /  START SAIR","L/R SWITCH  /  X SELECT  /  START EXIT"),2,p.muted);
 }
 static void clipped(int x,int y,const char *value,int maxchars,int scale,unsigned int color)
@@ -222,11 +222,39 @@ static void editor(const IptvitaUi *ui, Palette p)
                           "TRI SAVE  /  O CANCEL  /  TOUCH LETTERS"),2,p.accent);
     if(ui->save_status==2) label(605,146,tr(ui,"NOME E URL OBRIGATORIOS","NAME AND URL REQUIRED"),2,p.accent);
 }
+static void channel_browser(const IptvitaUi *ui, Palette p)
+{
+    heading(ui->page,p,tr(ui,"CANAIS DA PLAYLIST","PLAYLIST CHANNELS"),
+            tr(ui,"CIMA/BAIXO NAVEGAR  /  O VOLTAR","UP/DOWN BROWSE  /  O BACK"));
+    if(ui->playlist.status<0) {
+        const char *pt=ui->playlist.status==-1?"ERRO AO LER ARQUIVO":
+            ui->playlist.status==-2?"M3U INVALIDA OU VAZIA":
+            ui->playlist.status==-4?"CAMINHO LOCAL INVALIDO":"LIMITE DE CANAIS";
+        const char *en=ui->playlist.status==-1?"FILE READ ERROR":
+            ui->playlist.status==-2?"INVALID OR EMPTY M3U":
+            ui->playlist.status==-4?"INVALID LOCAL PATH":"CHANNEL LIMIT";
+        label(263,150,ui->language?en:pt,3,p.accent);
+    }
+    char count[40];snprintf(count,sizeof(count),"%d CANAIS",ui->playlist.count);
+    label(264,117,count,2,p.muted);
+    int offset=ui->channel_index>=7?ui->channel_index-6:0;
+    for(int i=offset;i<ui->playlist.count && i<offset+7;++i) {
+        int y=151+(i-offset)*44;
+        int active=i==ui->channel_index;
+        rect(252,y,672,39,active?p.selected:p.surface);
+        if(active)rect(252,y,4,39,p.accent);
+        clipped(267,y+10,ui->playlist.channels[i].name,37,2,p.white);
+        clipped(731,y+10,ui->playlist.channels[i].group,14,2,p.muted);
+    }
+    label(253,491,tr(ui,"X REPRODUCAO NA PROXIMA FASE","X PLAYBACK IN NEXT PHASE"),2,p.muted);
+    if(ui->save_status==5)label(253,465,tr(ui,"PLAYER AINDA NAO DISPONIVEL","PLAYER NOT AVAILABLE YET"),2,p.accent);
+}
 static void saved_sources(const IptvitaUi *ui, Palette p)
 {
+    if(ui->browsing) { channel_browser(ui,p); return; }
     heading(ui->page,p,tr(ui,"FONTES SALVAS","SAVED SOURCES"),
-            tr(ui,"X EDITAR  /  QUAD EXCLUIR  /  SELECT ADICIONAR",
-                          "X EDIT  /  SQUARE DELETE  /  SELECT ADD"));
+            tr(ui,"X ABRIR  /  R EDITAR  /  QUAD EXCLUIR",
+                          "X OPEN  /  R EDIT  /  SQUARE DELETE"));
     if(!ui->sources.count)
         label(267,164,tr(ui,"NENHUMA FONTE SALVA","NO SOURCES SAVED"),3,p.muted);
     unsigned int offset=ui->list_index>=7 ? (unsigned int)(ui->list_index-6) : 0;
@@ -244,6 +272,7 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
     }
     if(ui->save_status==1) label(252,491,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
     if(ui->save_status==4) label(252,491,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
+    if(ui->save_status==6) label(252,491,tr(ui,"DOWNLOAD ONLINE NA PROXIMA VERSAO","ONLINE DOWNLOAD IN NEXT VERSION"),2,p.accent);
 }
 
 static void sources(const IptvitaUi *ui, Palette p)
@@ -304,7 +333,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.3.4 / FONTES","VERSION 0.3.4 / SOURCES"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.4.0 / CANAIS","VERSION 0.4.0 / CHANNELS"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
