@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 typedef struct { int socket; } VitaSocket;
 static int send_cb(void *ctx,const unsigned char *buf,size_t len)
@@ -42,10 +43,12 @@ static int dial(const char *host)
  return sock;
 }
 
-int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
-                    unsigned char *out,size_t capacity,int *http_code)
+static int tls_get_once(const char *url,const unsigned char *ca,size_t ca_len,
+                        unsigned char *out,size_t capacity,int *http_code,
+                        char *redirect,size_t redirect_cap)
 {
  if(http_code)*http_code=0;
+ if(redirect && redirect_cap)redirect[0]=0;
  if(!url || strncmp(url,"https://",8)!=0 || !ca || !ca_len || !out || capacity<64)return -1;
  const char *host=url+8,*slash=strchr(host,'/');
  size_t hostlen=slash?(size_t)(slash-host):strlen(host);
@@ -73,7 +76,7 @@ int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
  int rc;
  do {rc=mbedtls_ssl_handshake(&ssl);}while(rc==MBEDTLS_ERR_SSL_WANT_READ||rc==MBEDTLS_ERR_SSL_WANT_WRITE);
  if(rc!=0){result=-5;goto done;}
- char req[2048];
+ char req[8192];
  int n=snprintf(req,sizeof(req),"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: IPTVita/0.6\r\nAccept: */*\r\nConnection: close\r\n\r\n",path,domain);
  if(n<0 || n>=(int)sizeof(req)){result=-6;goto done;}
  size_t sent=0;
@@ -96,6 +99,24 @@ int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
  if(!body){result=-10;goto done;}
  int code=0;sscanf((char*)out,"HTTP/%*s %d",&code);
  if(http_code)*http_code=code;
+ if(code>=300 && code<400 && redirect && redirect_cap) {
+  const char *line=(const char*)out;
+  while((line=strstr(line,"\r\n"))!=NULL) {
+   line+=2;
+   if(line[0]=='\r' && line[1]=='\n')break;
+   if(strncasecmp(line,"Location:",9)==0) {
+    const char *value=line+9;
+    while(*value==' ' || *value=='\t')value++;
+    const char *end=strstr(value,"\r\n");
+    if(end && end>value && (size_t)(end-value)<redirect_cap) {
+     memcpy(redirect,value,(size_t)(end-value));
+     redirect[end-value]=0;
+    }
+    break;
+   }
+  }
+  result=-12;goto done;
+ }
  if(code!=200){result=-11;goto done;}
  body+=4;
  size_t headers=(size_t)(body-out);
@@ -107,4 +128,45 @@ done:
  mbedtls_ssl_free(&ssl);mbedtls_ssl_config_free(&conf);
  mbedtls_x509_crt_free(&cert);mbedtls_ctr_drbg_free(&rng);mbedtls_entropy_free(&entropy);
  return result;
+}
+
+/* Follow up to five verified HTTPS redirects. No certificate checks disabled. */
+int iptvita_tls_get(const char *url,const unsigned char *ca,size_t ca_len,
+                    unsigned char *out,size_t capacity,int *http_code)
+{
+ if(!url || strlen(url)>=4096)return -2;
+ char current[4096];
+ snprintf(current,sizeof(current),"%s",url);
+ for(int hop=0;hop<=5;hop++) {
+  char location[4096];
+  int n=tls_get_once(current,ca,ca_len,out,capacity,http_code,location,sizeof(location));
+  if(n!=-12)return n;
+  if(hop==5)return -13;
+  if(!location[0])return -14;
+  char next[4096];
+  if(strncmp(location,"https://",8)==0) {
+   if(strlen(location)>=sizeof(next))return -15;
+   strcpy(next,location);
+  }else if(strncmp(location,"http://",7)==0) {
+   return -16;
+  }else {
+   const char *scheme=strstr(current,"://");
+   if(!scheme)return -15;
+   const char *host=scheme+3;
+   const char *slash=strchr(host,'/');
+   size_t origin=(size_t)((slash?slash:current+strlen(current))-current);
+   if(location[0]=='/' && location[1]=='/') {
+    if(snprintf(next,sizeof(next),"https:%s",location)>=(int)sizeof(next))return -15;
+   }else if(location[0]=='/') {
+    if(snprintf(next,sizeof(next),"%.*s%s",(int)origin,current,location)>=(int)sizeof(next))return -15;
+   }else {
+    const char *end=current+strcspn(current,"?#");
+    const char *dir=end;
+    while(dir>host && dir[-1]!='/')dir--;
+    if(snprintf(next,sizeof(next),"%.*s%s",(int)(dir-current),current,location)>=(int)sizeof(next))return -15;
+   }
+  }
+  memcpy(current,next,strlen(next)+1);
+ }
+ return -13;
 }
