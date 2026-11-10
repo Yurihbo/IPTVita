@@ -227,12 +227,51 @@ static void inspect_key(IptvitaUi *ui)
  int n=sceIoRead(fd,key,16);
  sceIoClose(fd);
  if(n!=16){fail(ui,-25);return;}
- memcpy(ui->stream_key,key,16);
- memset(key,0,16);
- snprintf(ui->stream_cached_key_url,sizeof(ui->stream_cached_key_url),"%s",ui->stream_key_url);
- ui->stream_key_valid=1;
- int rc=schedule(ui,ui->stream_segment_url,3);
+ int alternate=ui->stream_stage==9;
+ int rc;
+ if(alternate) {
+  memcpy(ui->stream_alt_audio_key,key,16);
+  snprintf(ui->stream_alt_audio_cached_key_url,
+    sizeof(ui->stream_alt_audio_cached_key_url),"%s",ui->stream_alt_audio_key_url);
+  ui->stream_alt_audio_key_valid=1;
+  memset(key,0,sizeof(key));
+  rc=schedule(ui,ui->stream_alt_audio_segment_url,8);
+ }else {
+  memcpy(ui->stream_key,key,16);
+  snprintf(ui->stream_cached_key_url,sizeof(ui->stream_cached_key_url),"%s",ui->stream_key_url);
+  ui->stream_key_valid=1;
+  memset(key,0,sizeof(key));
+  rc=schedule(ui,ui->stream_segment_url,3);
+ }
  if(rc<0)fail(ui,rc);
+}
+static void inspect_alt_audio(IptvitaUi *ui)
+{
+ SceUID fd=sceIoOpen(iptvita_network_cache_path(),SCE_O_RDONLY,0);
+ if(fd<0){ui->stream_alt_audio_list_url[0]=0;ui->stream_stage=5;return;}
+ SceOff length=sceIoLseek(fd,0,SCE_SEEK_END);
+ if(length<=0 || length>6*1024*1024 ||
+    sceIoLseek(fd,0,SCE_SEEK_SET)<0) {
+  sceIoClose(fd);ui->stream_alt_audio_list_url[0]=0;ui->stream_stage=5;return;
+ }
+ unsigned char *buffer=(unsigned char*)malloc((size_t)length);
+ if(!buffer) {
+  sceIoClose(fd);ui->stream_stage=5;return;
+ }
+ int read=sceIoRead(fd,buffer,(unsigned int)length);
+ sceIoClose(fd);
+ int plain=read;
+ if(read==(int)length && ui->stream_alt_audio_cipher==1) {
+  if(!ui->stream_alt_audio_key_valid)plain=-1;
+  else plain=iptvita_hls_decrypt(buffer,(size_t)read,ui->stream_alt_audio_key,
+                                 ui->stream_alt_audio_iv);
+ }
+ if(plain>0)feed_alt_audio(ui,buffer,(size_t)plain);
+ free(buffer);
+ ui->stream_alt_audio_last_sequence=ui->stream_alt_audio_selected_sequence;
+ ui->stream_alt_audio_has_sequence=1;
+ ui->stream_stage=5;
+ ui->stream_refresh_at=now_us()+100000ULL;
 }
 static void inspect_ts(IptvitaUi *ui)
 {
