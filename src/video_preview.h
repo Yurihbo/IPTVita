@@ -16,5 +16,5 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
 IptvitaPreviewStats iptvita_preview_stats(void);
 /* Consume at most one compressed access unit per video tick. */
 void iptvita_preview_tick(void);
-void iptvita_preview_draw(int x,int y,int width,int height);
+void iptvita_preview_draw(int x,int y,int width,int height,int fill);
 #endif
