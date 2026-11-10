@@ -51,6 +51,14 @@ typedef struct {
     unsigned stream_packets,stream_nals,stream_frames;
     int stream_video_pid;
     int stream_audio_pid,stream_audio_type;
+    char stream_alt_audio_list_url[8192];
+    char stream_alt_audio_segment_url[8192];
+    char stream_alt_audio_key_url[8192];
+    char stream_alt_audio_cached_key_url[8192];
+    unsigned char stream_alt_audio_key[16],stream_alt_audio_iv[16];
+    unsigned long long stream_alt_audio_last_sequence,stream_alt_audio_selected_sequence;
+    int stream_alt_audio_has_sequence,stream_alt_audio_pending,stream_alt_audio_key_valid;
+    int stream_alt_audio_cipher,stream_alt_audio_type;
     int stream_decode_error;
     unsigned stream_decoded_frames;
     int stream_video_width,stream_video_height;
