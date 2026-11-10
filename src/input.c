@@ -99,12 +99,17 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         if(pressed&SCE_CTRL_CIRCLE) {if(ui->channel_details) ui->channel_details=0;else ui->browsing=0;return 0;}
         if(ui->channel_details) {
             if((pressed&SCE_CTRL_TRIANGLE) && ui->playlist.count>0)
-                ui->player_probe_result=iptvita_player_probe(ui->playlist.channels[ui->channel_index].url);
+                {ui->player_probe_target=1;
+                ui->player_probe_result=iptvita_player_probe(ui->playlist.channels[ui->channel_index].url);}
+            if(pressed&SCE_CTRL_SQUARE) {
+                ui->player_probe_target=2;
+                ui->player_probe_result=iptvita_player_probe("ux0:data/IPTVita/test.mp4");
+            }
             return 0;
         }
         if((pressed&SCE_CTRL_UP) && ui->channel_index>0) --ui->channel_index;
         if((pressed&SCE_CTRL_DOWN) && ui->channel_index+1<ui->playlist.count) ++ui->channel_index;
-        if((pressed&SCE_CTRL_CROSS) && ui->playlist.count>0) {ui->channel_details=1;ui->player_probe_result=0;}
+        if((pressed&SCE_CTRL_CROSS) && ui->playlist.count>0) {ui->channel_details=1;ui->player_probe_result=0;ui->player_probe_target=0;}
         return 0;
     }
     if(pressed&SCE_CTRL_START) { ui->quit_confirm=1; return 0; }
