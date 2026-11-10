@@ -6,6 +6,7 @@ typedef struct {
  int width,height,decode_error;
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
  int waiting_for_idr;
+ int decoder_phase; /* 0 idle, 1 init failure, 2 decode, 3 output seen */
 } IptvitaPreviewStats;
 void iptvita_preview_reset(void);
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
