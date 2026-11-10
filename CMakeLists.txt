@@ -56,6 +56,7 @@ target_link_libraries(IPTVita.elf
   ${CURL_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   z
+  pthread
   m
 )
 
