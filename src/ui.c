@@ -292,7 +292,14 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         label(265,208,kind,3,p.accent);
         label(265,256,tr(ui,"URL DO STREAM:","STREAM URL:"),2,p.muted);
         clipped(265,284,url,82,2,p.white);
-        label(265,365,tr(ui,"TRI STREAM / QUAD MP4 LOCAL","TRI STREAM / SQUARE LOCAL MP4"),2,p.accent);
+        label(265,365,tr(ui,"TRI TESTAR HLS / QUAD MP4 LOCAL","TRI TEST HLS / SQUARE LOCAL MP4"),2,p.accent);
+        if(ui->stream_stage) {
+            char line[120];
+            snprintf(line,sizeof(line),"HLS ETAPA %d  STATUS %d",ui->stream_stage,ui->stream_status);
+            label(265,400,line,2,p.white);
+            snprintf(line,sizeof(line),"TS %u  NAL %u  AU %u  PID %d",ui->stream_packets,ui->stream_nals,ui->stream_frames,ui->stream_video_pid);
+            label(265,432,line,2,p.accent);
+        }
         if(ui->player_probe_result) {
             char probe[80];
             snprintf(probe,sizeof(probe),"%s: %d (0x%08X)",ui->player_probe_target==2?"MP4 LOCAL":"STREAM",ui->player_probe_result,(unsigned int)ui->player_probe_result);
