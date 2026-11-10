@@ -1,5 +1,6 @@
 #include "input.h"
 #include "keyboard.h"
+#include "network.h"
 #include <psp2/ctrl.h>
 #include <string.h>
 #include <stdio.h>
@@ -116,7 +117,13 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             if(type==3) {
                 iptvita_playlist_load(&ui->playlist,ui->sources.items[ui->source_index].url);
                 ui->browsing=1;
-            } else ui->save_status=6; /* remote fetch next milestone */
+            } else if(type==0) {
+                if(iptvita_network_start(ui->sources.items[ui->source_index].url)==0) {
+                    ui->browsing=1;
+                    ui->playlist.count=0;
+                    ui->playlist.status=0;
+                } else ui->save_status=7;
+            } else ui->save_status=6; /* Xtream and direct streams not yet supported */
         }
         if((pressed&SCE_CTRL_RTRIGGER) && ui->sources.count)
             begin_edit(ui,ui->list_index,0);
