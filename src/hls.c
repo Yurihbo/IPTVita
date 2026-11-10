@@ -29,7 +29,7 @@ int iptvita_hls_inspect_next(const char *text,const char *base,IptvitaHlsInfo *o
  if(strncmp(p,"#EXTM3U",7)!=0)return -2;
  out->is_hls=1;
  int expect_variant=0;
- int pending_height=0,chosen_height=0,compatible=0;
+ int pending_height=0,chosen_height=0,chosen_tier=0;
  int method=0,has_iv=0;
  unsigned char current_iv[16]={0};
  char current_key[IPTVITA_HLS_URL_MAX]={0};
@@ -100,13 +100,17 @@ int iptvita_hls_inspect_next(const char *text,const char *base,IptvitaHlsInfo *o
    memcpy(ref,s,k);ref[k]=0;
    if(expect_variant) {
     ++out->variants;expect_variant=0;
-    int is_ok=pending_height>0 && pending_height<=720;
-    int select= !out->first_media[0] ||
-      (is_ok && (!compatible || pending_height>chosen_height));
+    /* Prefer an SD profile first. High-res hardware AVC can exhaust
+     * reference-picture memory even when the nominal 720p limit fits. */
+    int tier=pending_height>0 && pending_height<=480?3:
+             pending_height>0 && pending_height<=720?2:1;
+    int select=!out->first_media[0] ||
+      tier>chosen_tier || (tier==chosen_tier &&
+                          pending_height>chosen_height && pending_height<=720);
     if(select) {
      if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
      chosen_height=pending_height;
-     compatible=is_ok;
+     chosen_tier=tier;
     }
    } else {
     unsigned long long segment_number=sequence+(unsigned long long)out->segments;
