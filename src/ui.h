@@ -30,6 +30,7 @@ typedef struct {
     int edit_index;
     int edit_field;
     int keyboard_index;
+    int grid_keyboard;
     int save_status;
     IptvitaSource draft;
     IptvitaSources sources;
