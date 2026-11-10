@@ -2,6 +2,8 @@
 #include "avc_decoder.h"
 #include "h264_sps.h"
 #include <vita2d.h>
+#include <psp2/kernel/processmgr.h>
+#include "h264_au.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,16 +13,32 @@ static unsigned char *rgba;
 static size_t rgba_size;
 static vita2d_texture *texture;
 static IptvitaPreviewStats st;
+#define FRAME_QUEUE 120
+#define QUEUE_BYTES (12u*1024u*1024u)
+typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
+static EncodedFrame frames[FRAME_QUEUE];
+static unsigned head,tail,count;
+static size_t total_bytes;
+static unsigned long long due_at;
+static uint64_t previous_pts;
+static int previous_pts_valid;
+static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
+
 
 void iptvita_preview_reset(void)
 {
+ while(count) {
+  free(frames[head].data);
+  head=(head+1)%FRAME_QUEUE;count--;
+ }
+ head=tail=0;total_bytes=0;due_at=0;previous_pts_valid=0;previous_pts=0;
  if(open)iptvita_avc_close(&dec);
  open=0;
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
  free(rgba);rgba=NULL;rgba_size=0;
  memset(&st,0,sizeof st);
 }
-void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
+static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
  (void)key;
  if(!data || !size)return;
@@ -58,6 +76,41 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  if(!dst || stride<(unsigned)st.width*4u){st.decode_error=-32;return;}
  for(int y=0;y<st.height;y++)
   memcpy(dst+(size_t)y*stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
+}
+void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
+{
+ if(!data || !size || size>IPTVITA_H264_AU_MAX)return;
+ if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes)return;
+ unsigned char *copy=(unsigned char*)malloc(size);
+ if(!copy)return;
+ memcpy(copy,data,size);
+ frames[tail].data=copy;
+ frames[tail].size=size;
+ frames[tail].pts=pts;
+ frames[tail].has_pts=has_pts;
+ frames[tail].key=key;
+ tail=(tail+1)%FRAME_QUEUE;
+ count++;
+ total_bytes+=size;
+}
+void iptvita_preview_tick(void)
+{
+ if(!count)return;
+ unsigned long long now=clock_us();
+ if(due_at && now<due_at)return;
+ EncodedFrame item=frames[head];
+ head=(head+1)%FRAME_QUEUE;count--;
+ total_bytes-=item.size;
+ decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
+ free(item.data);
+ unsigned long long duration=33333ULL;
+ if(previous_pts_valid && item.has_pts && item.pts>previous_pts) {
+  uint64_t delta=item.pts-previous_pts;
+  if(delta>=900 && delta<=9000)duration=delta*1000000ULL/90000ULL;
+ }
+ previous_pts=item.pts;
+ previous_pts_valid=item.has_pts;
+ due_at=now+duration;
 }
 IptvitaPreviewStats iptvita_preview_stats(void){return st;}
 void iptvita_preview_draw(int x,int y,int width,int height)
