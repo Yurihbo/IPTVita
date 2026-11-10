@@ -98,22 +98,42 @@ static int open_attempt(IptvitaAvcDecoder *d,int width,int height,int references
  ret=sceKernelGetMemBlockBase(d->es_uid,&esbase);
  if(ret<0)goto error;
  d->es_data=(unsigned char*)esbase;d->es_capacity=es_alloc;
- unsigned picbytes=(w*h*4u+262143u)&~262143u;
+ /* The older Vita IPTV player starts with 3-4 hardware picture slots and
+  * adds more only if memory is available. Requiring five or eight can itself
+  * prevent playback. Map each slot for the GXM display/codec path. */
+ unsigned pixels=w*h*4u;
  for(unsigned i=0;i<8;i++) {
-  SceUID uid=sceKernelAllocMemBlock("iptvita_avc_picture",SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,picbytes,NULL);
-  if(uid<0) {
-   if(i<5){ret=uid;goto error;}
+  int mapped=0;
+  for(int kind=0;kind<2 && !mapped;kind++) {
+   unsigned align=kind?1024u*1024u:256u*1024u;
+   unsigned picbytes=(pixels+align-1u)&~(align-1u);
+   int type=kind?SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW:
+                  SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW;
+   SceUID uid=sceKernelAllocMemBlock("iptvita_avc_picture",type,picbytes,NULL);
+   if(uid<0){ret=uid;continue;}
+   void *picbase=NULL;
+   int base_rc=sceKernelGetMemBlockBase(uid,&picbase);
+   if(base_rc<0 || !picbase){
+    sceKernelFreeMemBlock(uid);
+    ret=base_rc<0?base_rc:-6;
+    continue;
+   }
+   int map_rc=sceGxmMapMemory(picbase,picbytes,SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE);
+   if(map_rc<0){
+    sceKernelFreeMemBlock(uid);
+    ret=map_rc;
+    continue;
+   }
+   d->picture_uid[i]=uid;
+   d->picture_data[i]=(unsigned char*)picbase;
+   d->picture_mapped[i]=1;
+   d->picture_count++;
+   mapped=1;
+  }
+  if(!mapped) {
+   if(d->picture_count<3)goto error;
    break;
   }
-  void *picbase=NULL;
-  ret=sceKernelGetMemBlockBase(uid,&picbase);
-  if(ret<0){sceKernelFreeMemBlock(uid);goto error;}
-  int map_rc=sceGxmMapMemory(picbase,picbytes,SCE_GXM_MEMORY_ATTRIB_READ|SCE_GXM_MEMORY_ATTRIB_WRITE);
-  if(map_rc<0){sceKernelFreeMemBlock(uid);ret=map_rc;goto error;}
-  d->picture_uid[i]=uid;
-  d->picture_data[i]=(unsigned char*)picbase;
-  d->picture_mapped[i]=1;
-  d->picture_count++;
  }
  return 0;
 error:
@@ -155,7 +175,7 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  SceAvcdecAu access;
  SceAvcdecPicture picture[2],*pictures[2];
  SceAvcdecArrayPicture output;
- if(!d->es_data || size>d->es_capacity || d->picture_count<5)return -3;
+ if(!d->es_data || size>d->es_capacity || d->picture_count<3)return -3;
  memcpy(d->es_data,bytes,size);
  memset(&access,0,sizeof(access));
  memset(picture,0,sizeof(picture));
