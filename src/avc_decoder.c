@@ -104,7 +104,7 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  unsigned w=align16((unsigned)d->width),h=align16((unsigned)d->height);
  if(rgba_capacity<(size_t)w*h*4u)return -2;
  SceAvcdecAu access;
- SceAvcdecPicture picture[8],*pictures[8];
+ SceAvcdecPicture picture[2],*pictures[2];
  SceAvcdecArrayPicture output;
  if(!d->es_data || size>d->es_capacity || d->picture_count<5)return -3;
  memcpy(d->es_data,bytes,size);
@@ -116,7 +116,10 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  access.dts.upper=access.dts.lower=0xffffffffu;
  access.pts.upper=has_pts?(unsigned)(pts>>32):0xffffffffu;
  access.pts.lower=has_pts?(unsigned)pts:0xffffffffu;
- for(unsigned i=0;i<d->picture_count;i++) {
+ /* Public AVC API is designed for a small output picture array (up to 2);
+  * passing all eight allocated slots in one call can exhaust codec state. */
+ const unsigned outputs=d->picture_count>=2?2:1;
+ for(unsigned i=0;i<outputs;i++) {
   unsigned slot=(d->slot+i)%d->picture_count;
   picture[i].size=sizeof(SceAvcdecPicture);
   picture[i].frame.pixelType=SCE_AVCDEC_PIXELFORMAT_RGBA8888;
@@ -127,12 +130,12 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
   picture[i].frame.pPicture[0]=d->picture_data[slot];
   pictures[i]=&picture[i];
  }
- output.numOfElm=d->picture_count;
+ output.numOfElm=outputs;
  output.pPicture=pictures;
  int rc=sceAvcdecDecode(&d->ctrl,&access,&output);
  if(rc<0)return rc;
  if(!output.numOfOutput)return 0;
- if(output.numOfOutput>d->picture_count)return -4;
+ if(output.numOfOutput>outputs)return -4;
  memcpy(rgba,picture[output.numOfOutput-1].frame.pPicture[0],(size_t)w*h*4u);
  d->slot=(d->slot+output.numOfOutput)%d->picture_count;
  return 1;
