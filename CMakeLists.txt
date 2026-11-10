@@ -32,13 +32,13 @@ file(GLOB VITA_EXTRA_STUBS
 )
 
 target_link_libraries(IPTVita.elf
-  ${VITA_EXTRA_STUBS}
-  SceCommonDialog_stub
   vita2d
   SceCtrl_stub
   SceDisplay_stub
   SceGxm_stub
   SceSysmodule_stub
+  SceCommonDialog_stub
+  ${VITA_EXTRA_STUBS}
   m
 )
 
