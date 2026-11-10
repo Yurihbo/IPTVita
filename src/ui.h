@@ -40,6 +40,8 @@ typedef struct {
     int stream_cipher_method;
     unsigned char stream_key[16],stream_iv[16];
     char stream_key_url[8192],stream_segment_url[8192];
+    char stream_cached_key_url[8192];
+    int stream_key_valid;
     int stream_info_visible; /* R1 toggles stream diagnostics; default on details view */
     int stream_stage; /* 0 idle, 1 master/media playlist, 2 media playlist, 3 TS segment, 5 waiting for playlist refresh, negative error */
     int stream_status;
