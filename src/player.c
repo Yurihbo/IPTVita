@@ -2,12 +2,17 @@
 #include <psp2/avplayer.h>
 #include <psp2/sysmodule.h>
 #include <string.h>
+#include <psp2/io/stat.h>
 
 /* Native AVPlayer source acceptance probe. It does not render or play media.
  * In particular, HLS and HTTPS support cannot be assumed. */
 int iptvita_player_probe(const char *url)
 {
  if(!url || !url[0]) return -100;
+ if(strncmp(url,"ux0:",4)==0) {
+  SceIoStat st;
+  if(sceIoGetstat(url,&st)<0) return -101; /* Local test file missing */
+ }
  int module=sceSysmoduleLoadModule(SCE_SYSMODULE_AVPLAYER);
  if(module<0) return module;
  SceAvPlayerInitData init;
