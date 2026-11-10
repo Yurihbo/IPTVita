@@ -121,6 +121,41 @@ static int tls_get_once(const char *url,const unsigned char *ca,size_t ca_len,
  body+=4;
  size_t headers=(size_t)(body-out);
  size_t bytes=used-headers;
+ int chunked=0;
+ const char *line=(const char*)out;
+ while((line=strstr(line,"\r\n"))!=NULL && line<(const char*)body-2) {
+  line+=2;
+  if(!strncasecmp(line,"Transfer-Encoding:",18)) {
+   const char *end=strstr(line,"\r\n");
+   if(end && end<(const char*)body && (strstr(line,"chunked") && strstr(line,"chunked")<end))chunked=1;
+  }
+ }
+ if(chunked) {
+  /* Decode bounded HTTP/1.1 chunks in-place; binary TS payload is allowed. */
+  size_t src=0,dst=0;
+  while(src<bytes) {
+   size_t line_end=src;
+   while(line_end+1<bytes && !(body[line_end]=='\r' && body[line_end+1]=='\n'))line_end++;
+   if(line_end+1>=bytes){result=-17;goto done;}
+   size_t chunk=0;
+   int digits=0;
+   for(size_t j=src;j<line_end && body[j]!=';';j++) {
+    unsigned char c=body[j];
+    int v=c>='0'&&c<='9'?c-'0':c>='A'&&c<='F'?c-'A'+10:c>='a'&&c<='f'?c-'a'+10:-1;
+    if(v<0 || chunk>(capacity-(size_t)v)/16){result=-17;goto done;}
+    chunk=chunk*16+(size_t)v;digits++;
+   }
+   if(!digits){result=-17;goto done;}
+   src=line_end+2;
+   if(!chunk)break;
+   if(chunk>bytes-src || chunk>capacity-dst){result=-17;goto done;}
+   memmove(body+dst,body+src,chunk);
+   dst+=chunk;src+=chunk;
+   if(src+2>bytes || body[src]!='\r' || body[src+1]!='\n'){result=-17;goto done;}
+   src+=2;
+  }
+  bytes=dst;
+ }
  memmove(out,body,bytes);out[bytes]=0;
  result=(int)bytes;
 done:
