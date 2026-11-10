@@ -15,7 +15,7 @@ find_package(OpenSSL REQUIRED)
 
 set(VITA_APP_NAME "IPTVita")
 set(VITA_TITLEID "IPTVI0001")
-set(VITA_VERSION "00.52")
+set(VITA_VERSION "00.53")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -65,4 +65,5 @@ vita_create_vpk(IPTVita.vpk ${VITA_TITLEID} IPTVita.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE LICENSE LICENSE.txt
+  FILE assets/cacert.pem cacert.pem
 )
