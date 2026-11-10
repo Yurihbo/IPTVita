@@ -2,6 +2,7 @@
 #include "input.h"
 #include "keyboard.h"
 #include "network.h"
+#include "stream_diagnostic.h"
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
@@ -76,6 +77,7 @@ int main(void)
                 iptvita_network_reset();
             }
         }
+        if(ui.browsing && ui.channel_details) iptvita_stream_poll(&ui);
         vita2d_start_drawing();
         iptvita_ui_render(&ui);
         vita2d_end_drawing();
