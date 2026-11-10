@@ -150,7 +150,7 @@ static void sidebar(const IptvitaUi *ui, Palette p)
     }
     rect(22,452,176,2,p.raised);
     label(23,476,"BY YURIHBO",2,p.accent);
-    label(24,511,"IPTVITA  V0.3.1",2,p.muted);
+    label(24,511,"IPTVITA  V0.3.2",2,p.muted);
 }
 static void heading(int page, Palette p, const char *title, const char *hint)
 {
@@ -198,7 +198,7 @@ static void editor(const IptvitaUi *ui, Palette p)
                       ui->edit_field==2?ui->draft.username:ui->draft.password;
     int n=(int)strlen(value);
     heading(ui->page,p,tr(ui,"EDITAR FONTE","EDIT SOURCE"),
-            tr(ui,"TECLADO PELO CONTROLE","CONTROLLER KEYBOARD"));
+            tr(ui,"X ABRE TECLADO NATIVO","X OPENS VITA KEYBOARD"));
     rect(252,130,672,122,p.surface);
     label(271,146,names[ui->edit_field],2,p.accent);
     label(271,190,tr(ui,"CARACTERES","CHARACTERS"),2,p.muted);
@@ -210,16 +210,16 @@ static void editor(const IptvitaUi *ui, Palette p)
     else clipped(271,216,tail,45,2,p.white);
     for(int i=0;i<(int)(sizeof(keyboard)-1);++i) {
         int x=263+(i%11)*59, y=273+(i/11)*36;
-        int active=i==ui->keyboard_index;
+        int active=i==ui->keyboard_index && ui->grid_keyboard;
         rect(x,y,49,30,active?p.selected:p.raised);
         if(active)stroke(x,y,49,30,p.accent);
         char key[2]={keyboard[i],0};
         label(x+17,y+8,key,2,active?p.white:p.muted);
     }
-    label(253,473,tr(ui,"X DIGITAR  /  QUAD APAGAR  /  L/R CAMPO",
-                          "X TYPE  /  SQUARE DELETE  /  L/R FIELD"),2,p.muted);
-    label(253,503,tr(ui,"TRI SALVAR  /  O CANCELAR  /  TOUCH TECLADO",
-                          "TRI SAVE  /  O CANCEL  /  TOUCH KEYS"),2,p.accent);
+    label(253,473,ui->grid_keyboard ? tr(ui,"X LETRA  /  QUAD APAGAR  /  L/R CAMPO","X LETTER  /  SQUARE ERASE  /  L/R FIELD") :
+                 tr(ui,"X TECLADO VITA  /  L/R CAMPO  /  SELECT GRADE","X VITA KEYBOARD  /  L/R FIELD  /  SELECT GRID"),2,p.muted);
+    label(253,503,tr(ui,"TRI SALVAR  /  O CANCELAR  /  TOUCH LETRAS",
+                          "TRI SAVE  /  O CANCEL  /  TOUCH LETTERS"),2,p.accent);
     if(ui->save_status==2) label(605,146,tr(ui,"NOME E URL OBRIGATORIOS","NAME AND URL REQUIRED"),2,p.accent);
 }
 static void saved_sources(const IptvitaUi *ui, Palette p)
@@ -304,7 +304,7 @@ static void about(const IptvitaUi *ui, Palette p)
     rect(252,137,672,315,p.surface);
     rect(252,137,5,315,p.accent);
     label(282,169,"IPTVITA",5,p.white);
-    label(283,221,tr(ui,"VERSAO 0.3.1 / FONTES","VERSION 0.3.1 / SOURCES"),3,p.accent);
+    label(283,221,tr(ui,"VERSAO 0.3.2 / FONTES","VERSION 0.3.2 / SOURCES"),3,p.accent);
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
