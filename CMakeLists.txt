@@ -43,6 +43,7 @@ add_executable(IPTVita.elf
   src/pes_assembler.c
   src/h264_au.c
   src/video_pipeline.c
+  src/avc_decoder.c
   src/tls.c
   src/vita_entropy.c
 )
@@ -68,6 +69,7 @@ target_link_libraries(IPTVita.elf
   SceHttp_stub
   SceSsl_stub
   SceAvPlayer_stub
+  SceVideodec_stub
   SceDisplay_stub
   SceGxm_stub
   SceSysmodule_stub
