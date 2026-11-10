@@ -189,11 +189,23 @@ void iptvita_preview_tick(void)
  due_at=now+duration;
 }
 IptvitaPreviewStats iptvita_preview_stats(void){return st;}
-void iptvita_preview_draw(int x,int y,int width,int height)
+void iptvita_preview_draw(int x,int y,int width,int height,int fill)
 {
- if(!texture || !st.decoded || !st.width || !st.height)return;
+ if(!texture || !st.decoded || !st.width || !st.height || width<=0 || height<=0)return;
  float sx=(float)width/(float)st.width,sy=(float)height/(float)st.height;
- float scale=sx<sy?sx:sy;
- int dw=(int)(st.width*scale),dh=(int)(st.height*scale);
- vita2d_draw_texture_scale(texture,(float)(x+(width-dw)/2),(float)(y+(height-dh)/2),scale,scale);
+ if(fill) {
+  /* Preserve the image aspect ratio, center-cropping the excess rather than
+   * stretching a 4:3 source into the Vita's 16:9 screen. */
+  float scale=sx>sy?sx:sy;
+  float crop_w=(float)width/scale,crop_h=(float)height/scale;
+  float crop_x=((float)st.width-crop_w)*0.5f;
+  float crop_y=((float)st.height-crop_h)*0.5f;
+  vita2d_draw_texture_part_scale(texture,(float)x,(float)y,
+    crop_x,crop_y,crop_w,crop_h,scale,scale);
+ }else{
+  float scale=sx<sy?sx:sy;
+  float dw=(float)st.width*scale,dh=(float)st.height*scale;
+  vita2d_draw_texture_scale(texture,x+((float)width-dw)*0.5f,
+    y+((float)height-dh)*0.5f,scale,scale);
+ }
 }
