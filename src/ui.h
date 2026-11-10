@@ -30,6 +30,7 @@ typedef struct {
     int channel_index;
     int channel_details;
     int player_probe_result;
+    int player_probe_target;
     int source_index;
     IptvitaPlaylist playlist;
     int list_index;
