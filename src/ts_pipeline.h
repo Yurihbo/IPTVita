@@ -10,6 +10,9 @@ typedef struct {
  unsigned pes_video_starts, pes_audio_starts;
  uint64_t last_video_pts, last_audio_pts;
  unsigned video_pts_valid, audio_pts_valid;
+ unsigned h264_nal_units, h264_sps, h264_pps, h264_idr;
+ unsigned char video_tail[4];
+ unsigned video_tail_len;
 } IptvitaTsPipeline;
 void iptvita_ts_init(IptvitaTsPipeline *p);
 int iptvita_ts_feed(IptvitaTsPipeline *p,const unsigned char *data,size_t size);
