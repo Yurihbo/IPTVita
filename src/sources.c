@@ -8,11 +8,20 @@
 #define SOURCES_FILE SOURCES_DIR "/sources.bin"
 #define SOURCES_TMP SOURCES_DIR "/sources.tmp"
 #define SOURCES_MAGIC 0x49505433u
-#define SOURCES_VERSION 1u
+#define SOURCES_VERSION 2u
+#define LEGACY_URL_MAX 4096u
 
 typedef struct {
     uint32_t magic, version, count;
 } SourceHeader;
+/* Source files from earlier builds used a 4096-byte URL field. */
+typedef struct {
+    char name[IPTVITA_NAME_MAX];
+    char url[LEGACY_URL_MAX];
+    char username[IPTVITA_USER_MAX];
+    char password[IPTVITA_USER_MAX];
+    unsigned int type;
+} LegacySource;
 
 static int valid(const IptvitaSource *item)
 {
@@ -29,12 +38,20 @@ int iptvita_sources_load(IptvitaSources *s)
     if (fd < 0) return 0;
     SourceHeader h;
     int ok = sceIoRead(fd, &h, sizeof(h)) == (int)sizeof(h) &&
-             h.magic == SOURCES_MAGIC && h.version == SOURCES_VERSION &&
+             h.magic == SOURCES_MAGIC && (h.version == 1u || h.version == SOURCES_VERSION) &&
              h.count <= IPTVITA_MAX_SOURCES;
     if (ok) {
         for (uint32_t i=0; i<h.count; ++i) {
-            if (sceIoRead(fd, &s->items[i], sizeof(IptvitaSource)) != (int)sizeof(IptvitaSource) ||
-                !valid(&s->items[i])) { ok = 0; break; }
+            if (h.version == 1u) {
+                LegacySource old;
+                if (sceIoRead(fd, &old, sizeof(old)) != (int)sizeof(old)) { ok=0; break; }
+                memcpy(s->items[i].name,old.name,sizeof(old.name));
+                memcpy(s->items[i].url,old.url,sizeof(old.url));
+                memcpy(s->items[i].username,old.username,sizeof(old.username));
+                memcpy(s->items[i].password,old.password,sizeof(old.password));
+                s->items[i].type=old.type;
+            } else if (sceIoRead(fd, &s->items[i], sizeof(IptvitaSource)) != (int)sizeof(IptvitaSource)) { ok=0; break; }
+            if (!valid(&s->items[i])) {ok=0;break;}
         }
     }
     sceIoClose(fd);
