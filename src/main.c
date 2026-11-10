@@ -66,7 +66,7 @@ int main(void)
             quit = iptvita_handle_input(&ui, pressed);
         }
 
-        if(ui.browsing && ui.sources.items[ui.source_index].type==0 && ui.playlist.status==0) {
+        if(ui.browsing && ui.playlist.status==0) {
             int network=iptvita_network_state();
             if(network==2) {
                 iptvita_playlist_load(&ui.playlist,iptvita_network_cache_path());
