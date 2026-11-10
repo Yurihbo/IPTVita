@@ -160,3 +160,16 @@ void iptvita_stream_poll(IptvitaUi *ui)
  if(ui->stream_stage==3)inspect_ts(ui);
  else inspect_playlist(ui);
 }
+
+void iptvita_stream_stop(IptvitaUi *ui)
+{
+ close_pipeline();
+ iptvita_audio_stop();
+ iptvita_preview_reset();
+ if(ui) {
+  ui->stream_stage=0;
+  ui->stream_paused=0;
+  ui->stream_media_url[0]=0;
+  ui->stream_last_segment[0]=0;
+ }
+}
