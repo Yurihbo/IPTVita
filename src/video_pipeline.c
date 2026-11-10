@@ -1,4 +1,5 @@
 #include "video_pipeline.h"
+#include "aac_audio.h"
 #include <string.h>
 
 int iptvita_video_open(IptvitaVideoPipeline *v,IptvitaAuSink sink,void *user)
@@ -6,7 +7,7 @@ int iptvita_video_open(IptvitaVideoPipeline *v,IptvitaAuSink sink,void *user)
  if(!v || !sink)return -1;
  memset(v,0,sizeof(*v));
  iptvita_ts_init(&v->transport);
- v->video_pid=-1;
+ v->video_pid=-1;v->audio_pid=-1;
  v->sink=sink;v->user=user;
  if(iptvita_h264_au_open(&v->video_au,sink,user)<0)return -2;
  v->active=1;return 0;
@@ -29,11 +30,19 @@ int iptvita_video_feed(IptvitaVideoPipeline *v,const unsigned char *ts,size_t si
   v->video_pid=discovered;
  }
  if(v->video_pid>=0)iptvita_pes_push(&v->video_pes,ts,size);
+ int apid=v->transport.audio_pid;
+ if(v->transport.audio_type==0x0f && apid>=0 && apid!=v->audio_pid) {
+  if(v->audio_pid>=0) {iptvita_pes_flush(&v->audio_pes);iptvita_pes_close(&v->audio_pes);}
+  v->audio_pid=-1;
+  if(iptvita_pes_open(&v->audio_pes,apid,iptvita_audio_push_pes,NULL)==0)v->audio_pid=apid;
+ }
+ if(v->audio_pid>=0)iptvita_pes_push(&v->audio_pes,ts,size);
  return n;
 }
 void iptvita_video_close(IptvitaVideoPipeline *v)
 {
  if(!v || !v->active)return;
+ if(v->audio_pid>=0){iptvita_pes_flush(&v->audio_pes);iptvita_pes_close(&v->audio_pes);}
  if(v->video_pid>=0) {
   iptvita_pes_flush(&v->video_pes);
   iptvita_pes_close(&v->video_pes);
