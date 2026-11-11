@@ -492,7 +492,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
             snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
             label(25,463,details,2,p.white);
             IptvitaPreviewStats v=iptvita_preview_stats();
-            snprintf(details,sizeof(details),"AVC %d IDR %u REC %u FILA %u DESC %u OUT %u/%u DEC %uus",v.decoder_phase,v.keyframes,v.recoveries,v.queued,v.dropped,v.presented,v.decoded,v.decode_avg_us);
+            snprintf(details,sizeof(details),"AVC %d IDR %u REC %u FILA %u DESC %u OUT %u/%u DEC %uus A/V %+dms",v.decoder_phase,v.keyframes,v.recoveries,v.queued,v.dropped,v.presented,v.decoded,v.decode_avg_us,v.av_delta_ms);
             label(25,485,details,2,p.muted);
             if(audio.output_pts_valid) {
                 snprintf(details,sizeof(details),"AAC PTS %llu FILA %u DESC %u",
