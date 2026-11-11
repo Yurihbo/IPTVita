@@ -4,7 +4,7 @@
 #include <stdint.h>
 typedef struct {
  int width,height,decode_error;
- unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
+ unsigned decoded,submitted,keyframes,dropped,recoveries,queued,presented,decode_avg_us;
  unsigned long long last_output_us;
  int buffer_percent;
  int waiting_for_idr;
@@ -16,5 +16,6 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
 IptvitaPreviewStats iptvita_preview_stats(void);
 /* Consume at most one compressed access unit per video tick. */
 void iptvita_preview_tick(void);
+void iptvita_preview_pause(int paused);
 void iptvita_preview_draw(int x,int y,int width,int height,int fill);
 #endif
