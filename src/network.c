@@ -307,7 +307,8 @@ static int prefetch_worker(SceSize args,void *argp)
 }
 int iptvita_network_prefetch(const char *url)
 {
- if(!url || (!strstr(url,"http://") && !strstr(url,"https://")))return -1;
+ if(!url || (strncmp(url,"http://",7)!=0 &&
+              strncmp(url,"https://",8)!=0))return -1;
  size_t n=strlen(url);
  if(n<8 || n>=sizeof(prefetch_url) || prefetch_state==1)return -1;
  if(prefetch_state==2 && strcmp(prefetch_url,url)==0)return 0;
