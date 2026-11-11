@@ -10,6 +10,7 @@ typedef struct {
  unsigned hardware_pts,estimated_pts;
  unsigned decode_calls,picture_waits;
  unsigned queued_bytes,peak_queued_bytes;
+ unsigned ready_pictures,peak_ready_pictures;
  unsigned long long last_output_us;
  int buffer_percent;
  int buffering; /* 1 while awaiting enough video frames to start/resume */
@@ -21,7 +22,7 @@ typedef struct {
 void iptvita_preview_reset(void);
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
 IptvitaPreviewStats iptvita_preview_stats(void);
-/* Consume at most one compressed access unit per video tick. */
+/* UI thread presents decoded images; the AVC worker runs independently. */
 void iptvita_preview_tick(void);
 void iptvita_preview_resume(void);
 void iptvita_preview_draw(int x,int y,int width,int height,int fill);
