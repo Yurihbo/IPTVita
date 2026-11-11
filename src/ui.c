@@ -497,6 +497,13 @@ void iptvita_ui_render(const IptvitaUi *ui)
                      v.decoder_phase,v.keyframes,v.recoveries,v.queued,v.buffer_target,
                      v.buffer_events,v.av_sync?"AUDIO":"VIDEO");
             label(25,485,details,2,p.muted);
+            /* H264 diagnostics: count B pictures and reordered output PTS. */
+            if(v.b_frames || v.reordered_pts || v.late_pictures) {
+                char extra[112];
+                snprintf(extra,sizeof(extra),"B %u / PTS REORD %u / ATRASADOS %u",
+                         v.b_frames,v.reordered_pts,v.late_pictures);
+                label(615,444,extra,2,p.accent);
+            }
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
                   tr(ui,"X PAUSAR  R1 INFO  L1 TELA  O VOLTAR","X PAUSE  R1 INFO  L1 SCREEN  O BACK"),2,p.accent);
