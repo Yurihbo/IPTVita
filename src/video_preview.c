@@ -275,7 +275,8 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    * The delayed B-frame output may belong to an earlier submitted AU. */
   output_pts=actual_pts;
   output_has_pts=1;
- }
+  st.hardware_pts++;
+ }else if(fallback_has_pts)st.estimated_pts++;
  output_queued_us=clock_us();
  output_ready=1;
  st.decoder_phase=3;
