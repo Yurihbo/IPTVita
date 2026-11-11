@@ -11,7 +11,18 @@
 
 static IptvitaAvcDecoder dec;
 static int open;
-static unsigned char *rgba;
+/* Small bounded decoded-picture queue. AVCDEC reference buffers are separate;
+ * these are CPU RGBA staging surfaces and are allocated only on stream open.
+ * Three slots allow decoding ahead while the display waits for audio PTS. */
+#define DISPLAY_SLOTS 3
+typedef struct {
+ unsigned char *rgba;
+ uint64_t pts;
+ unsigned long long ready_at;
+ int has_pts;
+} DisplayPicture;
+static DisplayPicture pictures[DISPLAY_SLOTS];
+static unsigned picture_head,picture_tail,picture_count,picture_capacity;
 static size_t rgba_size;
 static vita2d_texture *texture;
 static IptvitaPreviewStats st;
@@ -54,9 +65,8 @@ static int audio_master_active;
 #define PTS_WINDOW 24
 static uint64_t pending_pts[PTS_WINDOW];
 static unsigned pending_count;
-static uint64_t output_pts, last_shown_pts;
-static int output_has_pts, output_ready, last_shown_valid;
-static unsigned long long output_queued_us;
+static uint64_t last_shown_pts;
+static int last_shown_valid;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
 static int64_t pts_difference(uint64_t a,uint64_t b)
 {
@@ -130,8 +140,10 @@ static int pts_take(uint64_t *pts)
 static void clear_presentation(void)
 {
  pending_count=0;
- output_ready=output_has_pts=last_shown_valid=0;
- output_queued_us=0;output_pts=last_shown_pts=0;
+ picture_head=picture_tail=picture_count=0;
+ last_shown_valid=0;
+ last_shown_pts=0;
+ st.decoded_queued=0;
 }
 
 void iptvita_preview_reset(void)
@@ -152,7 +164,11 @@ void iptvita_preview_reset(void)
  if(open)iptvita_avc_close(&dec);
  open=0;
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
- free(rgba);rgba=NULL;rgba_size=0;
+ for(unsigned i=0;i<DISPLAY_SLOTS;i++) {
+  free(pictures[i].rgba);
+  memset(&pictures[i],0,sizeof(pictures[i]));
+ }
+ picture_capacity=0;rgba_size=0;
  memset(&st,0,sizeof st);
  wait_for_idr=1;recovery_attempts=0;reference_frames=4;decoder_fatal=0;
  st.waiting_for_idr=1;
@@ -185,30 +201,46 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   size_t lines=(size_t)((h+15)&~15);
   size_t needed=stride*lines*4u;
   if(rgba_size<needed || st.width!=w || st.height!=h) {
-   free(rgba);rgba=NULL;rgba_size=0;
+   for(unsigned i=0;i<DISPLAY_SLOTS;i++){
+    free(pictures[i].rgba);
+    memset(&pictures[i],0,sizeof(pictures[i]));
+   }
+   picture_capacity=0;rgba_size=0;
+   clear_presentation();
    if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
   }
-  if(!rgba) {
-   rgba=(unsigned char*)malloc(needed);
-   if(rgba)rgba_size=needed;
+  if(!picture_capacity) {
+   for(unsigned i=0;i<DISPLAY_SLOTS;i++) {
+    pictures[i].rgba=(unsigned char*)malloc(needed);
+    if(!pictures[i].rgba)break;
+    picture_capacity++;
+   }
+   if(picture_capacity)rgba_size=needed;
   }
   if(!texture)texture=vita2d_create_empty_texture((unsigned)w,(unsigned)h);
-  if(!rgba || !texture) {
+  if(picture_capacity<1 || !texture) {
    st.decode_error=-31;
    iptvita_avc_close(&dec);
    if(texture){vita2d_free_texture(texture);texture=NULL;}
-   free(rgba);rgba=NULL;rgba_size=0;
+   for(unsigned i=0;i<DISPLAY_SLOTS;i++) {
+    free(pictures[i].rgba);
+    pictures[i].rgba=NULL;
+   }
+   picture_capacity=0;rgba_size=0;
    return;
   }
+  st.decoded_capacity=picture_capacity;
   st.width=w;st.height=h;
   open=1;
  }
+ if(picture_count>=picture_capacity)return;
  st.submitted++;
  st.decode_calls++;
  if(has_pts)pts_push(pts);
  uint64_t actual_pts=0;
  int actual_has_pts=0;
- int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size,
+ DisplayPicture *picture=&pictures[picture_tail];
+ int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,picture->rgba,rgba_size,
                            &actual_pts,&actual_has_pts);
  if(rc<0) {
   /* Bad AUs may be rejected before contributing a decoded picture. */
@@ -269,17 +301,17 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  /* AVC may return the output for an earlier AU. The hardware produces
   * decoded pictures in its display sequence; the caller only schedules
   * presentation after the output exists. */
- int fallback_has_pts=pts_take(&output_pts);
- output_has_pts=fallback_has_pts;
+ int fallback_has_pts=pts_take(&picture->pts);
+ picture->has_pts=fallback_has_pts;
  if(actual_has_pts) {
-  /* The picture's own timestamp wins over the approximate AU PTS queue.
-   * The delayed B-frame output may belong to an earlier submitted AU. */
-  output_pts=actual_pts;
-  output_has_pts=1;
+  picture->pts=actual_pts;
+  picture->has_pts=1;
   st.hardware_pts++;
  }else if(fallback_has_pts)st.estimated_pts++;
- output_queued_us=clock_us();
- output_ready=1;
+ picture->ready_at=clock_us();
+ picture_tail=(picture_tail+1)%picture_capacity;
+ picture_count++;
+ st.decoded_queued=picture_count;
  st.decoder_phase=3;
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
@@ -323,77 +355,89 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
  queue_unlock();
 }
+static void retire_picture(void)
+{
+ if(!picture_count)return;
+ picture_head=(picture_head+1)%picture_capacity;
+ picture_count--;
+ st.decoded_queued=picture_count;
+}
 static void present_picture(void)
 {
- if(!output_ready || !texture || !rgba)return;
+ if(!picture_count || !texture)return;
+ DisplayPicture *picture=&pictures[picture_head];
  unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
  unsigned dst_stride=vita2d_texture_get_stride(texture);
  unsigned src_stride=(unsigned)((st.width+15)&~15)*4u;
- if(!dst || dst_stride<(unsigned)st.width*4u) {st.decode_error=-32;output_ready=0;return;}
+ if(!dst || dst_stride<(unsigned)st.width*4u) {
+  st.decode_error=-32;retire_picture();return;
+ }
  for(int y=0;y<st.height;y++)
-  memcpy(dst+(size_t)y*dst_stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
+  memcpy(dst+(size_t)y*dst_stride,picture->rgba+(size_t)y*src_stride,
+         (size_t)st.width*4u);
  st.decoded++;
  saw_picture=1;
  st.last_output_us=clock_us();
- if(output_has_pts){last_shown_pts=output_pts;last_shown_valid=1;}
- output_ready=0;
+ if(picture->has_pts){last_shown_pts=picture->pts;last_shown_valid=1;}
+ retire_picture();
 }
 static int presentation_due(unsigned long long now)
 {
- if(!output_ready)return 0;
- if(!output_has_pts)return !due_at || now>=due_at;
+ if(!picture_count)return 0;
+ DisplayPicture *picture=&pictures[picture_head];
+ if(!picture->has_pts)return !due_at || now>=due_at;
  uint64_t audio_pts=0;
  if(iptvita_audio_clock(&audio_pts)) {
-  int64_t delta=pts_difference(output_pts,audio_pts);
+  int64_t delta=pts_difference(picture->pts,audio_pts);
   if(delta>-90000LL*8 && delta<90000LL*8) {
    st.av_sync=1;
    audio_master_active=1;
-   if(delta>4500LL && now-output_queued_us<1000000ULL)return 0;
+   if(delta>4500LL && now-picture->ready_at<1000000ULL)return 0;
    return 1;
   }
  }
  st.av_sync=0;audio_master_active=0;
  if(!video_clock_valid) {
-  video_base_pts=output_pts;
+  video_base_pts=picture->pts;
   video_base_us=now;
   video_clock_valid=1;
   return 1;
  }
- int64_t delta=pts_difference(output_pts,video_base_pts);
+ int64_t delta=pts_difference(picture->pts,video_base_pts);
  if(delta < -90000LL*3 || delta > 90000LL*30) {
-  video_base_pts=output_pts;video_base_us=now;return 1;
+  video_base_pts=picture->pts;video_base_us=now;return 1;
  }
  if(delta>0) {
   unsigned long long due=video_base_us+(unsigned long long)delta*100ULL/9ULL;
-  if(due>now && due-now<1000000ULL && now-output_queued_us<1000000ULL)return 0;
+  if(due>now && due-now<1000000ULL && now-picture->ready_at<1000000ULL)return 0;
  }
  return 1;
 }
 void iptvita_preview_tick(void)
 {
- /* Never overwrite the single RGBA output while it is waiting for display.
-  * Display order follows decoder output, rather than input AU order. */
  unsigned long long now=clock_us();
- if(output_ready) {
-  /* A picture must not block the next AU after it has been displayed.
-   * Previously every successful decode was followed by an entire main-loop
-   * iteration that did nothing but present it: on a ~30 Hz render loop this
-   * capped decoding near 15 fps even when audio and network were healthy. */
-  if(!presentation_due(now)) {
-   st.picture_waits++;
-   return;
-  }
-  if(output_has_pts && last_shown_valid &&
-     pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
-   st.dropped++;st.late_pictures++;output_ready=0;
-  }else present_picture();
-  /* Continue immediately into the next compressed AU, with the previous
-   * picture already copied to the vita2d texture. The decoder's next RGBA
-   * output cannot overwrite a picture still waiting for presentation. */
- }
+ /* Present at most one picture per screen tick, but keep decoding into
+  * other slots. Late pictures are discarded AFTER decoding, preserving
+  * reference pictures used by later B/P frames. */
+ if(picture_count && presentation_due(now)) {
+  DisplayPicture *p=&pictures[picture_head];
+  uint64_t audio_pts=0;
+  int too_old=p->has_pts && iptvita_audio_clock(&audio_pts) &&
+              pts_difference(p->pts,audio_pts)<-18000LL;
+  int backwards=p->has_pts && last_shown_valid &&
+                pts_difference(p->pts,last_shown_pts)<-4500LL;
+  if(too_old || backwards) {
+   st.dropped++;st.late_pictures++;
+   retire_picture();
+  } else present_picture();
+ }else if(picture_count)st.picture_waits++;
+ if(picture_capacity && picture_count>=picture_capacity)return;
  queue_lock();
  now=clock_us();
  if(!count) {
+  /* Already decoded pictures can still be presented while compressed input
+   * is temporarily empty; only then enter a video rebuffer state. */
+  if(picture_count){queue_unlock();return;}
   /* If a previously running channel empties, increase the reserve for
    * repeated network stalls, but bound it to protect Vita memory. */
   if(playback_primed && saw_picture) {
@@ -436,7 +480,7 @@ void iptvita_preview_tick(void)
  }
  /* Decode in H.264 bitstream order; B-picture PTS may precede an
   * already-submitted P picture, so timestamps cannot gate AU decoding. */
- if(!frames[head].has_pts && due_at && now<due_at) {
+ if(!frames[head].has_pts && due_at && now<due_at && picture_count==0) {
   queue_unlock();
   return;
  }
