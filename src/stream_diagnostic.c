@@ -365,9 +365,11 @@ static int segment_worker(SceSize args,void *argp)
 void iptvita_stream_poll(IptvitaUi *ui)
 {
  if(!ui)return;
- if(ui->stream_stage==10) {
+ if(segment_thread>=0) {
   if(segment_done)finish_segment_worker();
-  return;
+  else return;
+  /* The worker may have already transitioned stage 10 to 5 or an error. */
+  if(ui->stream_stage==10)return;
  }
  if(ui->stream_stage==5) {
   IptvitaPreviewStats video=iptvita_preview_stats();
