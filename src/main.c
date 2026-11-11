@@ -7,6 +7,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
+/* User activity while watching video should keep the display awake. */
 #include <psp2/kernel/threadmgr.h>
 #include <vita2d.h>
 
@@ -20,6 +21,7 @@ int main(void)
     unsigned int hold_frames = 0;
     unsigned int last_direction = 0;
     int touch_was_down = 0;
+    unsigned long long last_power_tick = 0;
 
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
@@ -78,7 +80,17 @@ int main(void)
                 iptvita_network_reset();
             }
         }
-        if(ui.browsing && ui.channel_details) iptvita_stream_poll(&ui);
+        if(ui.browsing && ui.channel_details) {
+            /* Vita's screen dim / auto-suspend timers normally treat video
+             * playback as idle. Refresh them only while a player is open.
+             * Do not override the physical power button or system suspend. */
+            unsigned long long now=(unsigned long long)sceKernelGetProcessTimeWide();
+            if(!last_power_tick || now-last_power_tick>=15000000ULL) {
+                sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+                last_power_tick=now;
+            }
+            iptvita_stream_poll(&ui);
+        }else last_power_tick=0;
         if(ui.browsing && ui.channel_details) {
             if(!ui.stream_paused) iptvita_preview_tick();
             IptvitaPreviewStats stats=iptvita_preview_stats();
