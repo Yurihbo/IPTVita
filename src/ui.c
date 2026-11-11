@@ -461,7 +461,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
         if(!ui->stream_paused && ui->stream_stage>0) {
             IptvitaPreviewStats video=iptvita_preview_stats();
             unsigned long long now=(unsigned long long)sceKernelGetProcessTimeWide();
-            int stalled=video.decoded==0 ||
+            int stalled=video.buffering || video.decoded==0 ||
                 (video.last_output_us && now>video.last_output_us+900000ULL);
             if(stalled) {
                 IptvitaAudioStats audio=iptvita_audio_stats();
@@ -474,7 +474,8 @@ void iptvita_ui_render(const IptvitaUi *ui)
                 if(pct>100)pct=100;
                 rect(12,12,220,50,RGBA8(8,20,33,224));
                 char buffering[50];
-                snprintf(buffering,sizeof(buffering),"BUFFERING %d%%",pct);
+                snprintf(buffering,sizeof(buffering),
+                         video.buffering?"BUFFERING %d%%":"VIDEO %d%%",pct);
                 label(23,22,buffering,2,p.white);
                 rect(23,48,193,5,RGBA8(50,65,80,255));
                 rect(23,48,193*pct/100,5,p.accent);
@@ -492,7 +493,9 @@ void iptvita_ui_render(const IptvitaUi *ui)
             snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
             label(25,463,details,2,p.white);
             IptvitaPreviewStats v=iptvita_preview_stats();
-            snprintf(details,sizeof(details),"AVC FASE %d / IDR %u / AGUARDA %d / RECUP %u / FILA %u / DESC %u",v.decoder_phase,v.keyframes,v.waiting_for_idr,v.recoveries,v.queued,v.dropped);
+            snprintf(details,sizeof(details),"AVC %d / IDR %u / REC %u / FILA %u/%u / REBUF %u / AV %s",
+                     v.decoder_phase,v.keyframes,v.recoveries,v.queued,v.buffer_target,
+                     v.buffer_events,v.av_sync?"AUDIO":"VIDEO");
             label(25,485,details,2,p.muted);
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
