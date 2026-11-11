@@ -442,12 +442,101 @@ static int presentation_due(unsigned long long now)
  }
  return 1;
 }
+
+/* The only consumer of the encoded H.264 queue. The renderer is never
+ * required to feed the codec, and does not call sceAvcdecDecode. */
+static int avc_worker(SceSize args,void *argp)
+{
+ (void)args;(void)argp;
+ while(!decoder_stop) {
+  EncodedFrame item={0};
+  int got=0;
+  queue_lock();
+  unsigned long long now=clock_us();
+  if(!decoder_paused && !decoder_fatal &&
+     (!picture_capacity || picture_count<picture_capacity)) {
+   if(!count && !picture_count) {
+    if(playback_primed && saw_picture) {
+     if(!last_underrun_us || now-last_underrun_us<15000000ULL) {
+      if(rebuffer_target<REBUFFER_MAX)rebuffer_target+=REBUFFER_STEP;
+     }
+     last_underrun_us=now;
+     last_target_decay_us=now;
+     st.buffer_events++;
+    }
+    playback_primed=0;
+    st.buffering=1;
+    st.buffer_target=saw_picture?rebuffer_target:START_FRAMES;
+    st.buffer_percent=0;
+   }else if(count) {
+    if(!playback_primed) {
+     unsigned goal=saw_picture?rebuffer_target:START_FRAMES;
+     st.buffering=1;
+     st.buffer_target=goal;
+     st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
+     if(count>=goal || total_bytes>=QUEUE_BYTES/2) {
+      playback_primed=1;
+      st.buffering=0;
+      previous_pts_valid=0;
+      video_clock_valid=audio_master_active=0;
+      last_target_decay_us=now;
+     }
+    }
+    if(playback_primed) {
+     if(saw_picture && rebuffer_target>REBUFFER_MIN &&
+        now>=last_target_decay_us &&
+        now-last_target_decay_us>STABLE_DECAY_US) {
+      rebuffer_target-=REBUFFER_STEP;
+      last_target_decay_us=now;
+     }
+     item=frames[head];
+     head=(head+1)%FRAME_QUEUE;count--;
+     total_bytes-=item.size;
+     st.queued=count;
+     st.queued_bytes=(unsigned)total_bytes;
+     st.buffer_target=rebuffer_target;
+     st.buffer_percent=count>=rebuffer_target?100:
+                            (int)(count*100u/rebuffer_target);
+     got=1;
+    }
+   }
+  }
+  queue_unlock();
+  if(!got) {
+   sceKernelDelayThread(2000);
+   continue;
+  }
+  if(decoder_stop) {free(item.data);break;}
+  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
+  free(item.data);
+  last_decoder_us=clock_us();
+ }
+ sceKernelExitThread(0);
+ return 0;
+}
+/* UI thread: GXM/vita2d objects never cross into the AVC worker. */
 void iptvita_preview_tick(void)
 {
+ unsigned width=0,height=0;
+ queue_lock();
+ if(picture_count && st.width>0 && st.height>0) {
+  width=(unsigned)st.width;
+  height=(unsigned)st.height;
+ }
+ queue_unlock();
+ if(width && (!texture || width!=texture_width || height!=texture_height)) {
+  if(texture) {
+   vita2d_wait_rendering_done();
+   vita2d_free_texture(texture);
+   texture=NULL;
+   texture_width=texture_height=0;
+  }
+  texture=vita2d_create_empty_texture(width,height);
+  if(texture){texture_width=width;texture_height=height;}
+ }
+ if(!texture)return;
+ queue_lock();
  unsigned long long now=clock_us();
- /* Present at most one picture per screen tick, but keep decoding into
-  * other slots. Late pictures are discarded AFTER decoding, preserving
-  * reference pictures used by later B/P frames. */
  if(picture_count && presentation_due(now)) {
   DisplayPicture *p=&pictures[picture_head];
   uint64_t audio_pts=0;
@@ -456,99 +545,37 @@ void iptvita_preview_tick(void)
   int backwards=p->has_pts && last_shown_valid &&
                 pts_difference(p->pts,last_shown_pts)<-4500LL;
   if(too_old || backwards) {
-   st.dropped++;st.late_pictures++;
+   st.dropped++;
+   st.late_pictures++;
    retire_picture();
-  } else present_picture();
- }else if(picture_count)st.picture_waits++;
- if(picture_capacity && picture_count>=picture_capacity)return;
- queue_lock();
- now=clock_us();
- if(!count) {
-  /* Already decoded pictures can still be presented while compressed input
-   * is temporarily empty; only then enter a video rebuffer state. */
-  if(picture_count){queue_unlock();return;}
-  /* If a previously running channel empties, increase the reserve for
-   * repeated network stalls, but bound it to protect Vita memory. */
-  if(playback_primed && saw_picture) {
-   if(!last_underrun_us || now-last_underrun_us<15000000ULL) {
-    if(rebuffer_target<REBUFFER_MAX)rebuffer_target+=REBUFFER_STEP;
-   }
-   last_underrun_us=now;
-   last_target_decay_us=now;
-   st.buffer_events++;
+  } else {
+   int no_pts=!p->has_pts;
+   present_picture();
+   if(no_pts)due_at=now+33333ULL;
   }
-  playback_primed=0;
-  st.buffering=1;
-  st.buffer_target=saw_picture?rebuffer_target:START_FRAMES;
-  st.buffer_percent=0;
-  due_at=0;
-  previous_pts_valid=0;
-  video_clock_valid=audio_master_active=0;
-  queue_unlock();
-  return;
- }
- if(!playback_primed) {
-  unsigned goal=saw_picture?rebuffer_target:START_FRAMES;
-  st.buffering=1;
-  st.buffer_target=goal;
-  st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
-  if(count<goal && total_bytes<QUEUE_BYTES/2) {queue_unlock();return;}
-  playback_primed=1;
-  st.buffering=0;
-  due_at=0;
-  previous_pts_valid=0;
-  video_clock_valid=audio_master_active=0;
-  last_target_decay_us=now;
- }
- /* A stable period gradually restores low-latency operation. */
- if(saw_picture && playback_primed && rebuffer_target>REBUFFER_MIN &&
-    now>=last_target_decay_us &&
-    now-last_target_decay_us>STABLE_DECAY_US) {
-  rebuffer_target-=REBUFFER_STEP;
-  last_target_decay_us=now;
- }
- /* Decode in H.264 bitstream order; B-picture PTS may precede an
-  * already-submitted P picture, so timestamps cannot gate AU decoding. */
- if(!frames[head].has_pts && due_at && now<due_at && picture_count==0) {
-  queue_unlock();
-  return;
- }
- EncodedFrame item=frames[head];
- head=(head+1)%FRAME_QUEUE;count--;
- total_bytes-=item.size;
- st.queued=count;
- st.queued_bytes=(unsigned)total_bytes;
- st.buffer_target=rebuffer_target;
- st.buffer_percent=count>=rebuffer_target?100:(int)(count*100u/rebuffer_target);
+ }else if(picture_count)st.picture_waits++;
  queue_unlock();
- decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
- free(item.data);
- unsigned long long duration=33333ULL;
- if(previous_pts_valid && item.has_pts && item.pts>previous_pts) {
-  uint64_t delta=item.pts-previous_pts;
-  if(delta>=900 && delta<=9000)duration=delta*1000000ULL/90000ULL;
- }
- previous_pts=item.pts;
- previous_pts_valid=item.has_pts;
- /* Keep the video clock anchored through small render-loop delays. Simply
-  * setting 'now + duration' on every tick accumulates lateness and leaves
-  * video behind the continuously playing audio. Large stalls re-anchor
-  * instead of fast-forwarding an entire buffered fragment. */
- if(due_at && now>=due_at && now-due_at<120000ULL)
-  due_at+=duration;
- else
-  due_at=now+duration;
 }
-void iptvita_preview_resume(void)
+void iptvita_preview_pause(int on)
 {
- /* The next decoded frame re-anchors the local clock after a user pause. */
  queue_lock();
- due_at=0;
- video_clock_valid=audio_master_active=0;
- previous_pts_valid=0;
+ decoder_paused=on?1:0;
+ if(!on) {
+  due_at=0;
+  video_clock_valid=audio_master_active=0;
+  previous_pts_valid=0;
+ }
  queue_unlock();
 }
-IptvitaPreviewStats iptvita_preview_stats(void){return st;}
+void iptvita_preview_resume(void){iptvita_preview_pause(0);}
+IptvitaPreviewStats iptvita_preview_stats(void)
+{
+ queue_lock();
+ IptvitaPreviewStats snapshot=st;
+ snapshot.worker_running=worker_enabled && !decoder_stop;
+ queue_unlock();
+ return snapshot;
+}
 void iptvita_preview_draw(int x,int y,int width,int height,int fill)
 {
  if(!texture || !st.decoded || !st.width || !st.height || width<=0 || height<=0)return;
