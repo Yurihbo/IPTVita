@@ -92,7 +92,8 @@ int main(void)
             iptvita_stream_poll(&ui);
         }else last_power_tick=0;
         if(ui.browsing && ui.channel_details) {
-            if(!ui.stream_paused) iptvita_preview_tick();
+            iptvita_preview_pause(ui.stream_paused);
+            iptvita_preview_tick();
             IptvitaPreviewStats stats=iptvita_preview_stats();
             ui.stream_decode_error=stats.decode_error;
             ui.stream_decoded_frames=stats.decoded;
