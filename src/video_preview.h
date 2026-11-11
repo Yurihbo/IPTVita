@@ -5,8 +5,10 @@
 typedef struct {
  int width,height,decode_error;
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
+ unsigned buffer_events,buffer_target;
  unsigned long long last_output_us;
  int buffer_percent;
+ int buffering; /* 1 while awaiting enough video frames to start/resume */
  int av_sync; /* 1: audio master clock; 0: local video clock */
  int waiting_for_idr;
  int fatal;
