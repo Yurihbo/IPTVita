@@ -148,6 +148,12 @@ int iptvita_hls_inspect_next_quality(const char *text,const char *base,IptvitaHl
     int select=!out->first_media[0] ||
       tier>chosen_tier || (tier==chosen_tier &&
                           pending_height>chosen_height && pending_height<=720);
+    if(!select && out->first_media[0] && !out->next_media[0] &&
+       segment_number==out->media_sequence+1ULL) {
+     if(resolve(base,ref,out->next_media,sizeof(out->next_media))<0)return -3;
+     out->next_sequence=segment_number;
+     out->next_cipher_method=method;
+    }
     if(select) {
      if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
      chosen_height=pending_height;
