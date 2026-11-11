@@ -15,6 +15,7 @@
 #define PREFETCH_PATH "ux0:data/IPTVita/prefetch.ts"
 #define PACKAGED_CA_PATH "app0:cacert.pem"
 #define MAX_BYTES (6u*1024u*1024u)
+#define PREFETCH_MAX_BYTES (4u*1024u*1024u)
 static char url_copy[8192];
 static volatile int state;
 static volatile int curl_error;
@@ -244,11 +245,11 @@ static int prefetch_worker(SceSize args,void *argp)
    SceOff len=sceIoLseek(cf,0,SCE_SEEK_END);
    if(len>0 && len<=1024*1024 && sceIoLseek(cf,0,SCE_SEEK_SET)>=0) {
     unsigned char *cert=(unsigned char*)malloc((size_t)len+1);
-    unsigned char *body=(unsigned char*)malloc(MAX_BYTES+1);
+    unsigned char *body=(unsigned char*)malloc(PREFETCH_MAX_BYTES+1);
     if(cert && body && sceIoRead(cf,cert,(unsigned)len)==len) {
      cert[len]=0;
      int http=0;
-     int n=iptvita_tls_get(url,cert,(size_t)len+1,body,MAX_BYTES,&http);
+     int n=iptvita_tls_get(url,cert,(size_t)len+1,body,PREFETCH_MAX_BYTES,&http);
      if(n>0 && n%188==0 && body[0]==0x47 && http==200) {
       SceUID fd=sceIoOpen(PREFETCH_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
       if(fd>=0) {
