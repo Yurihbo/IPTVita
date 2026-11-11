@@ -167,8 +167,10 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references)
  * AVC decoder. Callers own and retain the output buffer while decoding.
  * The decoder may legitimately buffer frames and produce no output. */
 int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t size,
-                       uint64_t pts,int has_pts,void *rgba,size_t rgba_capacity)
+                       uint64_t pts,int has_pts,void *rgba,size_t rgba_capacity,
+                       uint64_t *picture_pts,int *picture_has_pts)
 {
+ if(picture_has_pts)*picture_has_pts=0;
  if(!d || !d->decoder_open || !bytes || !size || size>0xffffffffu || !rgba)return -1;
  unsigned w=align16((unsigned)d->width),h=align16((unsigned)d->height);
  if(rgba_capacity<(size_t)w*h*4u)return -2;
@@ -183,10 +185,13 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  access.es.pBuf=d->es_data;
  access.es.size=(unsigned)size;
  access.dts.upper=access.dts.lower=0xffffffffu;
- /* Public VitaSDK documentation requires the timestamp sentinels.
-  * A transport PTS is used by the player clock, not passed to the codec. */
- (void)pts;(void)has_pts;
- access.pts.upper=access.pts.lower=0xffffffffu;
+ /* Preserve real MPEG PTS when supported by the firmware, enabling
+  * picture.info.pts to identify delayed B-frame output unambiguously.
+  * A few firmware/streams reject timestamps: retry once with sentinels. */
+ if(has_pts && !d->disable_pts) {
+  access.pts.upper=(unsigned)(pts>>32);
+  access.pts.lower=(unsigned)pts;
+ } else access.pts.upper=access.pts.lower=0xffffffffu;
  /* Public AVC API is designed for a small output picture array (up to 2);
   * passing all eight allocated slots in one call can exhaust codec state. */
  const unsigned outputs=1;
@@ -204,12 +209,28 @@ int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *bytes,size_t si
  output.numOfElm=outputs;
  output.pPicture=pictures;
  int rc=sceAvcdecDecode(&d->ctrl,&access,&output);
+ if(rc<0 && has_pts && !d->disable_pts &&
+    ((unsigned)rc==0x80620002u || (unsigned)rc==0x80620802u)) {
+  d->disable_pts=1;
+  d->pts_retries++;
+  access.pts.upper=access.pts.lower=0xffffffffu;
+  output.numOfElm=outputs;output.numOfOutput=0;
+  rc=sceAvcdecDecode(&d->ctrl,&access,&output);
+ }
  /* The codec may retain an output slot even while returning zero pictures.
   * Rotate submitted slots on every AU, not just successful output. */
  d->slot=(d->slot+outputs)%d->picture_count;
  if(rc<0)return rc;
  if(!output.numOfOutput)return 0;
  if(output.numOfOutput>outputs)return -4;
- memcpy(rgba,picture[output.numOfOutput-1].frame.pPicture[0],(size_t)w*h*4u);
+ SceAvcdecPicture *shown=&picture[output.numOfOutput-1];
+ if(picture_pts && picture_has_pts &&
+    !(shown->info.pts.upper==0xffffffffu &&
+      shown->info.pts.lower==0xffffffffu)) {
+  *picture_pts=((uint64_t)shown->info.pts.upper<<32)|
+               shown->info.pts.lower;
+  *picture_has_pts=1;
+ }
+ memcpy(rgba,shown->frame.pPicture[0],(size_t)w*h*4u);
  return 1;
 }

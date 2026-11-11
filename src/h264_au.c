@@ -78,6 +78,13 @@ static void consume_nal(IptvitaH264Au *a,const unsigned char *data,size_t n)
  int boundary=(type==9 && a->has_vcl) ||
      (vcl && a->has_vcl && first_mb(data+nalpos,n-nalpos)==0);
  if(boundary)emit(a);
+ /* After emit(), the prior AU's timestamps have been cleared. The new
+  * picture starts on this VCL NAL; keep the PES timestamp rather than
+  * accidentally leaving all subsequent AUs without a clock. */
+ if(vcl && !a->has_vcl && a->pending_has_pts) {
+  a->pts=a->pending_pts;
+  a->has_pts=1;
+ }
  size_t payload=n-nalpos;
  if(payload+4>IPTVITA_H264_AU_MAX-a->used) {
   a->dropped++;
