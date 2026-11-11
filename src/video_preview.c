@@ -19,15 +19,15 @@ static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
 static uint64_t newest_pts;
 static int have_newest_pts;
-#define FRAME_QUEUE 180
-#define QUEUE_BYTES (16u*1024u*1024u)
+#define FRAME_QUEUE 240
+#define QUEUE_BYTES (24u*1024u*1024u)
 /* Short compressed-frame cache absorbs download gaps without requiring
  * a large decoded frame pool on the Vita. Re-prime after an underrun. */
-#define START_FRAMES 18
-#define REBUFFER_MIN 12
-#define REBUFFER_MAX 48
-#define REBUFFER_STEP 6
-#define STABLE_DECAY_US 30000000ULL
+#define START_FRAMES 24
+#define REBUFFER_MIN 24
+#define REBUFFER_MAX 72
+#define REBUFFER_STEP 12
+#define STABLE_DECAY_US 45000000ULL
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
 static EncodedFrame frames[FRAME_QUEUE];
 static unsigned head,tail,count;
@@ -257,7 +257,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     head=(head+1)%FRAME_QUEUE;
     count--;
    }
-   total_bytes=0;tail=head;st.queued=0;
+   total_bytes=0;tail=head;st.queued=0;st.queued_bytes=0;
    queue_unlock();
   }
   return;
@@ -316,6 +316,8 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  count++;
  total_bytes+=size;
  st.queued=count;
+ st.queued_bytes=(unsigned)total_bytes;
+ if(st.queued_bytes>st.peak_queued_bytes)st.peak_queued_bytes=st.queued_bytes;
  unsigned goal=playback_primed?rebuffer_target:(saw_picture?rebuffer_target:START_FRAMES);
  st.buffer_target=goal;
  st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
@@ -442,6 +444,7 @@ void iptvita_preview_tick(void)
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
  st.queued=count;
+ st.queued_bytes=(unsigned)total_bytes;
  st.buffer_target=rebuffer_target;
  st.buffer_percent=count>=rebuffer_target?100:(int)(count*100u/rebuffer_target);
  queue_unlock();
