@@ -193,6 +193,11 @@ void iptvita_preview_reset(void)
  st.buffering=1;
  st.buffer_target=START_FRAMES;
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
+}
+int iptvita_preview_start(void)
+{
+ if(decoder_thread>=0)return worker_enabled?0:-1;
+ decoder_stop=0;
  decoder_thread=sceKernelCreateThread("iptvita_avc_worker",avc_worker,
                                      0x10000100,192*1024,0,0,NULL);
  if(decoder_thread>=0) {
@@ -200,6 +205,7 @@ void iptvita_preview_reset(void)
   else {sceKernelDeleteThread(decoder_thread);decoder_thread=-1;}
  }
  st.worker_running=worker_enabled;
+ return worker_enabled?0:-1;
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
@@ -256,9 +262,11 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    picture_capacity=0;rgba_size=0;
    return;
   }
+  queue_lock();
   st.decoded_capacity=picture_capacity;
   st.width=w;st.height=h;
   open=1;
+  queue_unlock();
  }
  if(picture_count>=picture_capacity)return;
  st.submitted++;
