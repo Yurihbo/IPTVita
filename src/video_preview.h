@@ -8,6 +8,7 @@ typedef struct {
  unsigned buffer_events,buffer_target;
  unsigned b_frames,reordered_pts,late_pictures;
  unsigned hardware_pts,estimated_pts;
+ unsigned decode_calls,picture_waits;
  unsigned long long last_output_us;
  int buffer_percent;
  int buffering; /* 1 while awaiting enough video frames to start/resume */
