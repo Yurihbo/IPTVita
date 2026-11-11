@@ -5,6 +5,7 @@
 typedef struct {
  int width,height,decode_error;
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued,presented,decode_avg_us;
+ int av_delta_ms;
  unsigned long long last_output_us;
  int buffer_percent;
  int waiting_for_idr;
