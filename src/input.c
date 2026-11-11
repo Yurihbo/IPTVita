@@ -124,7 +124,11 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             ui->player_probe_result=0;
             ui->player_probe_target=0;
             ui->stream_stage=0;
-            iptvita_stream_start(ui,ui->playlist.channels[ui->channel_index].url);
+            ui->stream_quality_sd=0;
+            ui->stream_hd_fallback_used=0;
+            snprintf(ui->stream_source_url,sizeof(ui->stream_source_url),"%s",
+                     ui->playlist.channels[ui->channel_index].url);
+            iptvita_stream_start(ui,ui->stream_source_url);
         }
         return 0;
     }
