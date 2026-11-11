@@ -25,6 +25,13 @@ static DisplayPicture pictures[DISPLAY_SLOTS];
 static unsigned picture_head,picture_tail,picture_count,picture_capacity;
 static size_t rgba_size;
 static vita2d_texture *texture;
+static unsigned texture_width,texture_height;
+/* Only AVC worker calls sceAvcdecDecode. The UI alone manages vita2d. */
+static SceUID decoder_thread=-1;
+static volatile int decoder_stop;
+static volatile int decoder_paused;
+static int worker_enabled;
+static unsigned long long last_decoder_us;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
@@ -137,6 +144,7 @@ static int pts_take(uint64_t *pts)
  --pending_count;
  return 1;
 }
+/* Caller holds queue_mutex when called from the worker. */
 static void clear_presentation(void)
 {
  pending_count=0;
@@ -146,8 +154,17 @@ static void clear_presentation(void)
  st.decoded_queued=0;
 }
 
+static int avc_worker(SceSize args,void *argp);
 void iptvita_preview_reset(void)
 {
+ /* Stop before freeing queues, decoder allocations or RGBA staging surfaces. */
+ decoder_stop=1;
+ if(decoder_thread>=0) {
+  sceKernelWaitThreadEnd(decoder_thread,NULL,NULL);
+  sceKernelDeleteThread(decoder_thread);
+  decoder_thread=-1;
+ }
+ worker_enabled=0;
  if(queue_mutex<0)queue_mutex=sceKernelCreateMutex("iptvita_video_queue",0,0,NULL);
  queue_lock();
  while(count) {
@@ -164,6 +181,7 @@ void iptvita_preview_reset(void)
  if(open)iptvita_avc_close(&dec);
  open=0;
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
+ texture_width=texture_height=0;
  for(unsigned i=0;i<DISPLAY_SLOTS;i++) {
   free(pictures[i].rgba);
   memset(&pictures[i],0,sizeof(pictures[i]));
@@ -174,6 +192,14 @@ void iptvita_preview_reset(void)
  st.waiting_for_idr=1;
  st.buffering=1;
  st.buffer_target=START_FRAMES;
+ decoder_stop=0;decoder_paused=0;last_decoder_us=0;
+ decoder_thread=sceKernelCreateThread("iptvita_avc_worker",avc_worker,
+                                     0x10000100,192*1024,0,0,NULL);
+ if(decoder_thread>=0) {
+  if(sceKernelStartThread(decoder_thread,0,NULL)>=0)worker_enabled=1;
+  else {sceKernelDeleteThread(decoder_thread);decoder_thread=-1;}
+ }
+ st.worker_running=worker_enabled;
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
@@ -200,14 +226,17 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   size_t stride=(size_t)((w+15)&~15);
   size_t lines=(size_t)((h+15)&~15);
   size_t needed=stride*lines*4u;
+  /* Worker owns the codec and CPU staging surfaces. Never call vita2d here.
+   * The UI creates/recreates the display texture on its own thread. */
   if(rgba_size<needed || st.width!=w || st.height!=h) {
+   queue_lock();
+   clear_presentation();
+   queue_unlock();
    for(unsigned i=0;i<DISPLAY_SLOTS;i++){
     free(pictures[i].rgba);
     memset(&pictures[i],0,sizeof(pictures[i]));
    }
    picture_capacity=0;rgba_size=0;
-   clear_presentation();
-   if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
   }
   if(!picture_capacity) {
    for(unsigned i=0;i<DISPLAY_SLOTS;i++) {
@@ -217,11 +246,9 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    }
    if(picture_capacity)rgba_size=needed;
   }
-  if(!texture)texture=vita2d_create_empty_texture((unsigned)w,(unsigned)h);
-  if(picture_capacity<1 || !texture) {
+  if(picture_capacity<1) {
    st.decode_error=-31;
    iptvita_avc_close(&dec);
-   if(texture){vita2d_free_texture(texture);texture=NULL;}
    for(unsigned i=0;i<DISPLAY_SLOTS;i++) {
     free(pictures[i].rgba);
     pictures[i].rgba=NULL;
@@ -267,7 +294,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     * Live streams can require more than four reference frames. */
    iptvita_avc_close(&dec);
    open=0;
-   clear_presentation();
+   queue_lock();clear_presentation();queue_unlock();
    wait_for_idr=1;
    recovery_attempts++;
    st.recoveries=recovery_attempts;
@@ -282,8 +309,8 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     * Keep the exact SDK error visible until the channel is reopened. */
    decoder_fatal=1;
    st.fatal=1;
-   clear_presentation();
    queue_lock();
+   clear_presentation();
    while(count) {
     free(frames[head].data);
     head=(head+1)%FRAME_QUEUE;
@@ -309,9 +336,11 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   st.hardware_pts++;
  }else if(fallback_has_pts)st.estimated_pts++;
  picture->ready_at=clock_us();
+ queue_lock();
  picture_tail=(picture_tail+1)%picture_capacity;
  picture_count++;
  st.decoded_queued=picture_count;
+ queue_unlock();
  st.decoder_phase=3;
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
