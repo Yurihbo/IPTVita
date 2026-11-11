@@ -10,6 +10,7 @@ typedef struct {
  unsigned hardware_pts,estimated_pts;
  unsigned decode_calls,picture_waits;
  unsigned queued_bytes,peak_queued_bytes;
+ unsigned decoded_queued,decoded_capacity;
  unsigned long long last_output_us;
  int buffer_percent;
  int buffering; /* 1 while awaiting enough video frames to start/resume */
