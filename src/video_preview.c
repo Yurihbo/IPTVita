@@ -162,8 +162,11 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   open=1;
  }
  st.submitted++;
+ if(has_pts)pts_push(pts);
  int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size);
  if(rc<0) {
+  /* Bad AUs may be rejected before contributing a decoded picture. */
+  if(has_pts && pending_count) --pending_count;
   /* A damaged live unit is not necessarily a fatal decoder failure.
    * 0x8062000D means invalid bitstream; skip and await the next IDR.
    * 0x8062000A means busy/full; don't lock the player on one AU. */
@@ -369,51 +372,10 @@ void iptvita_preview_tick(void)
  }
  /* Decode in H.264 bitstream order; B-picture PTS may precede an
   * already-submitted P picture, so timestamps cannot gate AU decoding. */
- if(0 && frames[head].has_pts) {
-  uint64_t audio_pts=0;
-  int have_audio=iptvita_audio_clock(&audio_pts);
-  int64_t delta=0;
-  if(have_audio) {
-   uint64_t diff=(frames[head].pts-audio_pts)&((1ULL<<33)-1);
-   delta=diff>=(1ULL<<32)?(int64_t)diff-(1LL<<33):(int64_t)diff;
-  }
-  if(have_audio && delta > -90000LL*8 && delta < 90000LL*8) {
-   /* Do not drive the video ahead of audio. Keep a small tolerance for
-    * the renderer/PCM device's own buffering latency. */
-   audio_master_active=1;
-   if(delta>4500LL) {
-    st.av_sync=1;
-    queue_unlock();
-    return;
-   }
-   st.av_sync=1;
-  } else {
-   /* No matching audio timestamps (including separate renditions):
-    * fall back to a PTS-paced video clock instead of freezing. */
-   if(audio_master_active)video_clock_valid=0;
-   audio_master_active=0;
-   st.av_sync=0;
-   if(!video_clock_valid) {
-    video_base_pts=frames[head].pts;
-    video_base_us=now;
-    video_clock_valid=1;
-   }
-   uint64_t diff=(frames[head].pts-video_base_pts)&((1ULL<<33)-1);
-   int64_t ticks=diff>=(1ULL<<32)?(int64_t)diff-(1LL<<33):(int64_t)diff;
-   if(ticks < -90000LL*3 || ticks > 90000LL*30) {
-    video_base_pts=frames[head].pts;
-    video_base_us=now;
-   }else if(ticks>0) {
-    unsigned long long due=video_base_us+(unsigned long long)ticks*100ULL/9ULL;
-    if(due>now && due-now<1500000ULL){queue_unlock();return;}
-    if(now>due+750000ULL) {
-     video_base_pts=frames[head].pts;
-     video_base_us=now;
-    }
-   }
-  }
- }else st.av_sync=0;
- if(!frames[head].has_pts && due_at && now<due_at){queue_unlock();return;}
+ if(!frames[head].has_pts && due_at && now<due_at) {
+  queue_unlock();
+  return;
+ }
  EncodedFrame item=frames[head];
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
@@ -421,7 +383,6 @@ void iptvita_preview_tick(void)
  st.buffer_target=rebuffer_target;
  st.buffer_percent=count>=rebuffer_target?100:(int)(count*100u/rebuffer_target);
  queue_unlock();
- if(item.has_pts)pts_push(item.pts);
  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
  free(item.data);
  unsigned long long duration=33333ULL;
