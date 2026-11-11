@@ -63,6 +63,47 @@ static int64_t pts_difference(uint64_t a,uint64_t b)
  uint64_t d=(a-b)&((1ULL<<33)-1);
  return d>=(1ULL<<32)?(int64_t)d-(1LL<<33):(int64_t)d;
 }
+/* Decode the first two slice-header Exp-Golomb fields: first_mb and
+ * slice_type. Only this classification is needed; reference management
+ * remains entirely the hardware decoder's responsibility. */
+static int read_ue(const unsigned char *p,size_t bytes,unsigned *bit)
+{
+ unsigned zero=0;
+ while(*bit<bytes*8 && zero<24) {
+  unsigned x=(p[*bit/8]>>(7-(*bit%8)))&1;
+  ++*bit;
+  if(x)break;
+  ++zero;
+ }
+ if(*bit>bytes*8 || zero>=24)return -1;
+ unsigned value=1;
+ for(unsigned i=0;i<zero;i++) {
+  if(*bit>=bytes*8)return -1;
+  value=(value<<1)|((p[*bit/8]>>(7-(*bit%8)))&1);
+  ++*bit;
+ }
+ return (int)(value-1);
+}
+static int is_b_picture(const unsigned char *data,size_t size)
+{
+ for(size_t i=0;i+6<size;i++) {
+  size_t prefix=0;
+  if(data[i]==0 && data[i+1]==0 && data[i+2]==1)prefix=3;
+  else if(i+4<size && data[i]==0 && data[i+1]==0 &&
+          data[i+2]==0 && data[i+3]==1)prefix=4;
+  if(!prefix)continue;
+  size_t n=i+prefix;
+  int type=data[n]&31;
+  if(type!=1 && type!=5)continue;
+  size_t len=size-n-1;
+  if(len>32)len=32;
+  unsigned bit=0;
+  if(read_ue(data+n+1,len,&bit)<0)return 0;
+  int slice=read_ue(data+n+1,len,&bit);
+  return slice==1 || slice==6;
+ }
+ return 0;
+}
 static void pts_push(uint64_t pts)
 {
  if(pending_count==PTS_WINDOW) {
@@ -80,6 +121,7 @@ static int pts_take(uint64_t *pts)
  for(unsigned i=1;i<pending_count;i++)
   if(pts_difference(pending_pts[i],pending_pts[best])<0)best=i;
  *pts=pending_pts[best];
+ if(best)st.reordered_pts++;
  memmove(pending_pts+best,pending_pts+best+1,
          (pending_count-best-1)*sizeof(pending_pts[0]));
  --pending_count;
@@ -248,6 +290,7 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
   have_newest_pts=1;
  }
  if(key)st.keyframes++;
+ if(is_b_picture(data,size))st.b_frames++;
  if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;queue_unlock();return;}
  unsigned char *copy=(unsigned char*)malloc(size);
  if(!copy){queue_unlock();return;}
@@ -322,7 +365,7 @@ void iptvita_preview_tick(void)
    if(output_has_pts && last_shown_valid &&
       pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
     /* Skip an obsolete presentation, never skip its decode operation. */
-    st.dropped++;output_ready=0;
+    st.dropped++;st.late_pictures++;output_ready=0;
   }else present_picture();
   }
   return;
