@@ -103,7 +103,10 @@ int main(void)
         iptvita_ui_render(&ui);
         vita2d_end_drawing();
         vita2d_swap_buffers();
-        sceKernelDelayThread(16000);
+        /* vita2d_swap_buffers may already synchronize with VBlank. Adding
+         * another 16 ms here halves the number of chances to feed AVCDEC on
+         * 30 fps streams. Yield briefly without throttling the player. */
+        sceKernelDelayThread(1000);
     }
 
     iptvita_ui_font_fini();
