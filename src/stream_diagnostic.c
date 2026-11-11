@@ -206,7 +206,11 @@ static void inspect_playlist(IptvitaUi *ui)
   ui->stream_media_url[sizeof(ui->stream_media_url)-1]=0;
   if(strcmp(next,ui->stream_last_segment)==0) {
    ui->stream_stage=5;
-   ui->stream_refresh_at=now_us()+1500000ULL;
+   /* Missing live segment is normal: poll more often while the video
+    * reservoir is low, but never busy-loop on an unchanged manifest. */
+   IptvitaPreviewStats v=iptvita_preview_stats();
+   ui->stream_refresh_at=now_us()+
+       (v.buffering || v.queued<24 ? 500000ULL : 1100000ULL);
    return;
   }
  }
@@ -351,7 +355,11 @@ static void inspect_ts(IptvitaUi *ui)
   if(ui->stream_audio_pid<0 && ui->stream_alt_audio_list_url[0])
    ui->stream_alt_audio_pending=1;
   ui->stream_stage=5;
-  ui->stream_refresh_at=now_us()+200000ULL;
+  /* The next segment may already be advertised. Avoid imposing a fixed
+   * 200 ms pause on each fragment when playback is running short. */
+  IptvitaPreviewStats v=iptvita_preview_stats();
+  ui->stream_refresh_at=now_us()+
+      (v.buffering || v.queued<24 ? 30000ULL : 130000ULL);
  }
 }
 static int segment_worker(SceSize args,void *argp)
