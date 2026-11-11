@@ -13,6 +13,11 @@ typedef struct {
  /* Optional independent audio rendition advertised by an HLS master. */
  char audio_media[IPTVITA_HLS_URL_MAX];
  char first_media[IPTVITA_HLS_URL_MAX];
+ /* Exactly one known successor for bounded parallel prefetch. Only safe for
+  * unencrypted MPEG-TS, since AES keys/IVs can change between segments. */
+ char next_media[IPTVITA_HLS_URL_MAX];
+ unsigned long long next_sequence;
+ int next_cipher_method;
 } IptvitaHlsInfo;
 /* Inspect HLS text without downloading or decoding video. */
 int iptvita_hls_inspect(const char *text, const char *base, IptvitaHlsInfo *out);
