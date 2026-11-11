@@ -11,6 +11,7 @@ typedef struct {
  unsigned decode_calls,picture_waits;
  unsigned queued_bytes,peak_queued_bytes;
  unsigned decoded_queued,decoded_capacity;
+ int worker_running;
  unsigned long long last_output_us;
  int buffer_percent;
  int buffering; /* 1 while awaiting enough video frames to start/resume */
@@ -20,6 +21,8 @@ typedef struct {
  int decoder_phase; /* 0 idle, 1 init failure, 2 decode, 3 output seen */
 } IptvitaPreviewStats;
 void iptvita_preview_reset(void);
+int iptvita_preview_start(void);
+void iptvita_preview_pause(int on);
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
 IptvitaPreviewStats iptvita_preview_stats(void);
 /* Consume at most one compressed access unit per video tick. */

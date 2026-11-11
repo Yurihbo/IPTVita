@@ -134,6 +134,10 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  ui->stream_decode_error=0;ui->stream_decoded_frames=0;
  ui->stream_video_width=ui->stream_video_height=0;
  iptvita_preview_reset();
+ if(iptvita_preview_start()<0) {
+  fail(ui,-32);
+  return -32;
+ }
  iptvita_audio_start();
  ui->stream_http=0;ui->stream_net_error=0;
  int ts=strstr(url,".ts")!=NULL && !strstr(url,".m3u8");

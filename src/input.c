@@ -104,7 +104,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             if((pressed&SCE_CTRL_CROSS) && ui->stream_stage>=1 && ui->stream_stage<=6) {
                 ui->stream_paused=!ui->stream_paused;
                 iptvita_audio_pause(ui->stream_paused);
-                if(!ui->stream_paused)iptvita_preview_resume();
+                iptvita_preview_pause(ui->stream_paused);
             }
             if(pressed&SCE_CTRL_RTRIGGER) ui->stream_info_visible=!ui->stream_info_visible;
             if(pressed&SCE_CTRL_LTRIGGER) ui->stream_fill_screen=!ui->stream_fill_screen;
