@@ -19,7 +19,7 @@ static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
 static uint64_t newest_pts;
 static int have_newest_pts;
-#define FRAME_QUEUE 240
+#define FRAME_QUEUE 1800
 #define QUEUE_BYTES (24u*1024u*1024u)
 /* Short compressed-frame cache absorbs download gaps without requiring
  * a large decoded frame pool on the Vita. Re-prime after an underrun. */
