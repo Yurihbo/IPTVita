@@ -109,6 +109,7 @@ int main(void)
         sceKernelDelayThread(1000);
     }
 
+    iptvita_stream_stop(&ui);
     iptvita_ui_font_fini();
     vita2d_fini();
     sceKernelExitProcess(0);
