@@ -24,6 +24,7 @@ int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references);
  * rgba must hold at least aligned_width * aligned_height * 4 bytes.
  * Returns 1 if a picture was produced, 0 if buffered, negative SDK error. */
 int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *au,size_t size,
-                       uint64_t pts,int has_pts,void *rgba,size_t rgba_capacity);
+                       uint64_t pts,int has_pts,void *rgba,size_t rgba_capacity,
+                       uint64_t *picture_pts,int *picture_has_pts);
 void iptvita_avc_close(IptvitaAvcDecoder *d);
 #endif
