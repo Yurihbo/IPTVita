@@ -14,6 +14,7 @@ static int open;
 static unsigned char *rgba;
 static size_t rgba_size;
 static vita2d_texture *texture;
+static int texture_width,texture_height;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
@@ -32,6 +33,29 @@ typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} E
 static EncodedFrame frames[FRAME_QUEUE];
 static unsigned head,tail,count;
 static SceUID queue_mutex=-1;
+/* The decoder is the sole producer of decoded pictures. A small bounded
+ * presentation ring holds RGBA copies while the UI renders independently. */
+#define DISPLAY_SLOTS 3
+typedef struct {
+ unsigned char *pixels;
+ uint64_t pts;
+ unsigned long long ready_us;
+ int has_pts;
+} DisplaySlot;
+static DisplaySlot display[DISPLAY_SLOTS];
+static unsigned display_head,display_tail,display_count;
+static SceUID display_mutex=-1;
+static SceUID decoder_thread=-1;
+static volatile int decoder_running;
+static void display_lock(void){if(display_mutex>=0)sceKernelLockMutex(display_mutex,1,NULL);}
+static void display_unlock(void){if(display_mutex>=0)sceKernelUnlockMutex(display_mutex,1);}
+static void display_clear(void)
+{
+ display_lock();
+ display_head=display_tail=display_count=0;
+ for(unsigned i=0;i<DISPLAY_SLOTS;i++){free(display[i].pixels);display[i].pixels=NULL;}
+ display_unlock();
+}
 static void queue_lock(void){if(queue_mutex>=0)sceKernelLockMutex(queue_mutex,1,NULL);}
 static void queue_unlock(void){if(queue_mutex>=0)sceKernelUnlockMutex(queue_mutex,1);}
 static size_t total_bytes;
@@ -134,8 +158,18 @@ static void clear_presentation(void)
  output_queued_us=0;output_pts=last_shown_pts=0;
 }
 
+static int decoder_worker(SceSize args,void *argp);
 void iptvita_preview_reset(void)
 {
+ decoder_running=0;
+ if(decoder_thread>=0) {
+  sceKernelWaitThreadEnd(decoder_thread,NULL,NULL);
+  sceKernelDeleteThread(decoder_thread);
+  decoder_thread=-1;
+ }
+ if(display_mutex<0)
+  display_mutex=sceKernelCreateMutex("iptvita_picture_slots",0,0,NULL);
+ display_clear();
  if(queue_mutex<0)queue_mutex=sceKernelCreateMutex("iptvita_video_queue",0,0,NULL);
  queue_lock();
  while(count) {
@@ -152,12 +186,21 @@ void iptvita_preview_reset(void)
  if(open)iptvita_avc_close(&dec);
  open=0;
  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
+ texture_width=texture_height=0;
  free(rgba);rgba=NULL;rgba_size=0;
  memset(&st,0,sizeof st);
  wait_for_idr=1;recovery_attempts=0;reference_frames=4;decoder_fatal=0;
  st.waiting_for_idr=1;
  st.buffering=1;
  st.buffer_target=START_FRAMES;
+ decoder_running=1;
+ decoder_thread=sceKernelCreateThread("iptvita_avc_worker",decoder_worker,
+                                     0x10000100,128*1024,0,0,NULL);
+ if(decoder_thread<0 || sceKernelStartThread(decoder_thread,0,NULL)<0) {
+  if(decoder_thread>=0)sceKernelDeleteThread(decoder_thread);
+  decoder_thread=-1;decoder_running=0;
+  st.decode_error=-35;st.fatal=1;
+ }
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
@@ -186,17 +229,15 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   size_t needed=stride*lines*4u;
   if(rgba_size<needed || st.width!=w || st.height!=h) {
    free(rgba);rgba=NULL;rgba_size=0;
-   if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
+   display_clear();
   }
   if(!rgba) {
    rgba=(unsigned char*)malloc(needed);
    if(rgba)rgba_size=needed;
   }
-  if(!texture)texture=vita2d_create_empty_texture((unsigned)w,(unsigned)h);
-  if(!rgba || !texture) {
+  if(!rgba) {
    st.decode_error=-31;
    iptvita_avc_close(&dec);
-   if(texture){vita2d_free_texture(texture);texture=NULL;}
    free(rgba);rgba=NULL;rgba_size=0;
    return;
   }
@@ -269,17 +310,27 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  /* AVC may return the output for an earlier AU. The hardware produces
   * decoded pictures in its display sequence; the caller only schedules
   * presentation after the output exists. */
- int fallback_has_pts=pts_take(&output_pts);
- output_has_pts=fallback_has_pts;
+ uint64_t frame_pts=0;
+ int frame_has_pts=pts_take(&frame_pts);
  if(actual_has_pts) {
-  /* The picture's own timestamp wins over the approximate AU PTS queue.
-   * The delayed B-frame output may belong to an earlier submitted AU. */
-  output_pts=actual_pts;
-  output_has_pts=1;
+  frame_pts=actual_pts;
+  frame_has_pts=1;
   st.hardware_pts++;
- }else if(fallback_has_pts)st.estimated_pts++;
- output_queued_us=clock_us();
- output_ready=1;
+ }else if(frame_has_pts)st.estimated_pts++;
+ display_lock();
+ if(display_count<DISPLAY_SLOTS) {
+  DisplaySlot *slot=&display[display_tail];
+  if(!slot->pixels)slot->pixels=(unsigned char*)malloc(rgba_size);
+  if(slot->pixels) {
+   memcpy(slot->pixels,rgba,rgba_size);
+   slot->pts=frame_pts;
+   slot->has_pts=frame_has_pts;
+   slot->ready_us=clock_us();
+   display_tail=(display_tail+1)%DISPLAY_SLOTS;
+   display_count++;
+  } else st.dropped++;
+ } else st.dropped++;
+ display_unlock();
  st.decoder_phase=3;
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
@@ -325,13 +376,15 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
 }
 static void present_picture(void)
 {
- if(!output_ready || !texture || !rgba)return;
+ if(!output_ready || !texture || !display_count)return;
+ DisplaySlot *slot=&display[display_head];
+ if(!slot->pixels)return;
  unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
  unsigned dst_stride=vita2d_texture_get_stride(texture);
  unsigned src_stride=(unsigned)((st.width+15)&~15)*4u;
  if(!dst || dst_stride<(unsigned)st.width*4u) {st.decode_error=-32;output_ready=0;return;}
  for(int y=0;y<st.height;y++)
-  memcpy(dst+(size_t)y*dst_stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
+  memcpy(dst+(size_t)y*dst_stride,slot->pixels+(size_t)y*src_stride,(size_t)st.width*4u);
  st.decoded++;
  saw_picture=1;
  st.last_output_us=clock_us();
@@ -371,26 +424,37 @@ static int presentation_due(unsigned long long now)
 }
 void iptvita_preview_tick(void)
 {
- /* Never overwrite the single RGBA output while it is waiting for display.
-  * Display order follows decoder output, rather than input AU order. */
- unsigned long long now=clock_us();
- if(output_ready) {
-  /* A picture must not block the next AU after it has been displayed.
-   * Previously every successful decode was followed by an entire main-loop
-   * iteration that did nothing but present it: on a ~30 Hz render loop this
-   * capped decoding near 15 fps even when audio and network were healthy. */
-  if(!presentation_due(now)) {
-   st.picture_waits++;
-   return;
-  }
-  if(output_has_pts && last_shown_valid &&
-     pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
-   st.dropped++;st.late_pictures++;output_ready=0;
-  }else present_picture();
-  /* Continue immediately into the next compressed AU, with the previous
-   * picture already copied to the vita2d texture. The decoder's next RGBA
-   * output cannot overwrite a picture still waiting for presentation. */
+ /* Rendering and GXM texture management remain exclusively on the UI thread.
+  * The worker only decodes into the bounded display slot ring. */
+ if(st.width>0 && st.height>0 &&
+    (!texture || texture_width!=st.width || texture_height!=st.height)) {
+  if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
+  texture=vita2d_create_empty_texture((unsigned)st.width,(unsigned)st.height);
+  if(texture){texture_width=st.width;texture_height=st.height;}
  }
+ display_lock();
+ if(display_count) {
+  DisplaySlot *front=&display[display_head];
+  output_pts=front->pts;
+  output_has_pts=front->has_pts;
+  output_queued_us=front->ready_us;
+  output_ready=1;
+  unsigned long long now=clock_us();
+  if(presentation_due(now)) {
+   if(output_has_pts && last_shown_valid &&
+      pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
+    st.dropped++;st.late_pictures++;
+   }else present_picture();
+   display_head=(display_head+1)%DISPLAY_SLOTS;
+   display_count--;
+   output_ready=0;
+  }else st.picture_waits++;
+ }
+ display_unlock();
+}
+static void decode_worker_tick(void)
+{
+ unsigned long long now=clock_us();
  queue_lock();
  now=clock_us();
  if(!count) {
@@ -465,6 +529,21 @@ void iptvita_preview_tick(void)
   due_at+=duration;
  else
   due_at=now+duration;
+}
+static int decoder_worker(SceSize args,void *argp)
+{
+ (void)args;(void)argp;
+ while(decoder_running) {
+  if(!decoder_fatal) {
+   display_lock();
+   unsigned ready=display_count;
+   display_unlock();
+   if(ready<DISPLAY_SLOTS)decode_worker_tick();
+  }
+  sceKernelDelayThread(1000);
+ }
+ sceKernelExitThread(0);
+ return 0;
 }
 void iptvita_preview_resume(void)
 {
