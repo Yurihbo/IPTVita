@@ -205,7 +205,10 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  }
  st.submitted++;
  if(has_pts)pts_push(pts);
- int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size);
+ uint64_t actual_pts=0;
+ int actual_has_pts=0;
+ int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,rgba,rgba_size,
+                           &actual_pts,&actual_has_pts);
  if(rc<0) {
   /* Bad AUs may be rejected before contributing a decoded picture. */
   if(has_pts && pending_count) --pending_count;
@@ -265,7 +268,14 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  /* AVC may return the output for an earlier AU. The hardware produces
   * decoded pictures in its display sequence; the caller only schedules
   * presentation after the output exists. */
- output_has_pts=pts_take(&output_pts);
+ int fallback_has_pts=pts_take(&output_pts);
+ output_has_pts=fallback_has_pts;
+ if(actual_has_pts) {
+  /* The picture's own timestamp wins over the approximate AU PTS queue.
+   * The delayed B-frame output may belong to an earlier submitted AU. */
+  output_pts=actual_pts;
+  output_has_pts=1;
+ }
  output_queued_us=clock_us();
  output_ready=1;
  st.decoder_phase=3;
