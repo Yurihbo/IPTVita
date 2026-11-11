@@ -19,11 +19,16 @@ static uint64_t newest_pts;
 static int have_newest_pts;
 #define FRAME_QUEUE 180
 #define QUEUE_BYTES (16u*1024u*1024u)
+/* Short compressed-frame cache absorbs download gaps without requiring
+ * a large decoded frame pool on the Vita. Re-prime after an underrun. */
+#define START_FRAMES 18
+#define REBUFFER_FRAMES 12
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
 static EncodedFrame frames[FRAME_QUEUE];
 static unsigned head,tail,count;
 static size_t total_bytes;
 static unsigned long long due_at;
+static int playback_primed;
 static uint64_t previous_pts;
 static int previous_pts_valid;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
@@ -35,7 +40,7 @@ void iptvita_preview_reset(void)
   free(frames[head].data);
   head=(head+1)%FRAME_QUEUE;count--;
  }
- head=tail=0;total_bytes=0;due_at=0;previous_pts_valid=0;previous_pts=0;
+ head=tail=0;total_bytes=0;due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
  newest_pts=0;have_newest_pts=0;
  if(open)iptvita_avc_close(&dec);
  open=0;
@@ -190,7 +195,20 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
 }
 void iptvita_preview_tick(void)
 {
- if(!count)return;
+ if(!count) {
+  /* Exhausted buffer: don't decode the next isolated frame immediately. */
+  playback_primed=0;
+  due_at=0;
+  previous_pts_valid=0;
+  return;
+ }
+ if(!playback_primed) {
+  if(count<(st.decoded?REBUFFER_FRAMES:START_FRAMES) &&
+     total_bytes<QUEUE_BYTES/2) return;
+  playback_primed=1;
+  due_at=0;
+  previous_pts_valid=0;
+ }
  unsigned long long now=clock_us();
  if(due_at && now<due_at)return;
  EncodedFrame item=frames[head];
