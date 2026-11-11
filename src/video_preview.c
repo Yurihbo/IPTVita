@@ -74,6 +74,22 @@ void iptvita_preview_reset(void)
  if(rc<0){st.decode_error=rc;st.fatal=1;thread_running=0;
            sceKernelDeleteThread(decode_thread);decode_thread=-1;}
 }
+void iptvita_preview_shutdown(void)
+{
+ thread_running=0;
+ if(decode_thread>=0){
+  sceKernelWaitThreadEnd(decode_thread,NULL,NULL);
+  sceKernelDeleteThread(decode_thread);
+  decode_thread=-1;
+ }
+ while(count){free(frames[head].data);head=(head+1)%FRAME_QUEUE;count--;}
+ head=tail=0;total_bytes=0;
+ if(open){iptvita_avc_close(&dec);open=0;}
+ if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
+ free(rgba);rgba=NULL;rgba_size=0;
+ free(ready_rgba);ready_rgba=NULL;ready_size=0;ready_pending=0;
+ if(queue_mutex>=0){sceKernelDeleteMutex(queue_mutex);queue_mutex=-1;}
+}
 void iptvita_preview_pause(int paused){thread_paused=paused?1:0;}
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
