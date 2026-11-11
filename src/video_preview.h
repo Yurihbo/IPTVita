@@ -6,6 +6,7 @@ typedef struct {
  int width,height,decode_error;
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
  unsigned buffer_events,buffer_target;
+ unsigned b_frames,reordered_pts,late_pictures;
  unsigned long long last_output_us;
  int buffer_percent;
  int buffering; /* 1 while awaiting enough video frames to start/resume */
