@@ -96,6 +96,7 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
  ui->stream_key_url[0]=0;ui->stream_segment_url[0]=0;
  ui->stream_key_valid=0;ui->stream_cached_key_url[0]=0;
  ui->stream_last_segment[0]=0;ui->stream_refresh_at=0;
+ ui->stream_failure_count=0;
  ui->stream_last_sequence=ui->stream_selected_sequence=0;
  ui->stream_has_sequence=0;
  ui->stream_packets=ui->stream_nals=ui->stream_frames=0;
@@ -359,13 +360,15 @@ void iptvita_stream_poll(IptvitaUi *ui)
    iptvita_audio_pause(1);
    return;
   }
-  if(!ui->stream_paused && ui->stream_media_url[0] &&
-     now_us()>=ui->stream_refresh_at) {
+  if(!ui->stream_paused && now_us()>=ui->stream_refresh_at &&
+     (ui->stream_media_url[0] || ui->stream_source_url[0])) {
    int rc;
    if(ui->stream_alt_audio_pending && ui->stream_alt_audio_list_url[0]) {
     ui->stream_alt_audio_pending=0;
     rc=schedule(ui,ui->stream_alt_audio_list_url,7);
-   }else rc=schedule(ui,ui->stream_media_url,2);
+   }else if(ui->stream_media_url[0])
+    rc=schedule(ui,ui->stream_media_url,2);
+   else rc=schedule(ui,ui->stream_source_url,1);
    if(rc<0)fail(ui,rc);
   }
   return;
@@ -382,9 +385,23 @@ void iptvita_stream_poll(IptvitaUi *ui)
   * afterwards could erase a newly completed worker's status. */
  iptvita_network_reset();
  if(net!=2) {
+  /* Keep buffered video/audio alive across brief network outages. A failed
+   * segment is reselected from the refreshed media playlist. Do not retry
+   * forbidden or missing resources indefinitely. */
+  if(ui->stream_http!=401 && ui->stream_http!=403 &&
+     ui->stream_http!=404 && ui->stream_failure_count<4 &&
+     (ui->stream_media_url[0] || ui->stream_source_url[0])) {
+   ++ui->stream_failure_count;
+   ui->stream_status=err?err:-20;
+   ui->stream_stage=5;
+   ui->stream_refresh_at=now_us()+
+           (unsigned long long)ui->stream_failure_count*750000ULL;
+   return;
+  }
   fail(ui,err?err:(ui->stream_http ? -20 : -11));
   return;
  }
+ ui->stream_failure_count=0;
  if(ui->stream_stage==3)inspect_ts(ui);
  else if(ui->stream_stage==8)inspect_alt_audio(ui);
  else if(ui->stream_stage==6 || ui->stream_stage==9)inspect_key(ui);
@@ -405,6 +422,7 @@ void iptvita_stream_stop(IptvitaUi *ui)
   memset(ui->stream_key,0,sizeof(ui->stream_key));
   ui->stream_cached_key_url[0]=0;
   ui->stream_has_sequence=0;
+  ui->stream_failure_count=0;
   ui->stream_alt_audio_has_sequence=0;
   ui->stream_alt_audio_pending=0;
   ui->stream_alt_audio_list_url[0]=0;
