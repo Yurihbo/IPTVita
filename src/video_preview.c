@@ -225,7 +225,14 @@ void iptvita_preview_tick(void)
  }
  previous_pts=item.pts;
  previous_pts_valid=item.has_pts;
- due_at=now+duration;
+ /* Keep the video clock anchored through small render-loop delays. Simply
+  * setting 'now + duration' on every tick accumulates lateness and leaves
+  * video behind the continuously playing audio. Large stalls re-anchor
+  * instead of fast-forwarding an entire buffered fragment. */
+ if(due_at && now>=due_at && now-due_at<120000ULL)
+  due_at+=duration;
+ else
+  due_at=now+duration;
 }
 IptvitaPreviewStats iptvita_preview_stats(void){return st;}
 void iptvita_preview_draw(int x,int y,int width,int height,int fill)
