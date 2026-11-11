@@ -10,7 +10,7 @@
 #define PREBUFFER 72
 #define MAX_ADTS 8192
 static const int rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
-typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];} Frame;
+typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];uint64_t pts;int has_pts;} Frame;
 static Frame fifo[FIFO];
 static unsigned head,tail,count;
 static volatile int running,paused;
@@ -24,6 +24,8 @@ static unsigned char *es,*pcm;
 static size_t es_cap;
 static unsigned char carry[MAX_ADTS];
 static size_t carry_len;
+static uint64_t next_pts;
+static int next_pts_valid;
 
 static void lock(void){if(mutex>=0)sceKernelLockMutex(mutex,1,NULL);}
 static void unlock(void){if(mutex>=0)sceKernelUnlockMutex(mutex,1);}
@@ -112,7 +114,12 @@ static int worker(SceSize args,void *argp)
   }
   rc=sceAudioOutOutput(port,pcm);
   if(rc<0)stats.error=rc;
-  else {stats.played++;stats.rate=hz;stats.channels=ch;}
+  else {
+   stats.played++;stats.rate=hz;stats.channels=ch;
+   if(cur->has_pts){stats.output_pts=cur->pts;stats.output_pts_valid=1;}
+   else if(stats.output_pts_valid && hz>0)
+    stats.output_pts+=(uint64_t)n*90000ULL/(unsigned)hz;
+  }
  }
  free(cur);
  close_audio();
@@ -124,6 +131,7 @@ int iptvita_audio_start(void)
  if(running)return 0;
  memset(&stats,0,sizeof stats);
  count=head=tail=0;carry_len=0;paused=0;primed=0;
+ next_pts=0;next_pts_valid=0;
  mutex=sceKernelCreateMutex("iptvita_audio_lock",0,0,NULL);
  if(mutex<0)return -1;
  running=1;
@@ -136,8 +144,9 @@ int iptvita_audio_start(void)
  * across PES boundaries. Unsupported LATM is not assumed to be ADTS. */
 void iptvita_audio_push_pes(void *user,const unsigned char *data,size_t bytes,uint64_t pts,int has_pts)
 {
- (void)user;(void)pts;(void)has_pts;
+ (void)user;
  if(!running || !data)return;
+ if(has_pts && carry_len==0){next_pts=pts;next_pts_valid=1;}
  for(size_t i=0;i<bytes;i++) {
   if(carry_len==MAX_ADTS){carry_len=0;stats.dropped++;}
   carry[carry_len++]=data[i];
@@ -153,11 +162,15 @@ void iptvita_audio_push_pes(void *user,const unsigned char *data,size_t bytes,ui
    if(count<FIFO) {
     Frame *f=&fifo[tail];
     f->len=(unsigned short)n;memcpy(f->bytes,carry,n);
+     f->pts=next_pts;f->has_pts=next_pts_valid;
     tail=(tail+1)%FIFO;count++;stats.queued++;
    }else stats.dropped++;
    stats.buffered=count;
    unlock();
-   carry_len-=n;memmove(carry,carry+n,carry_len);
+   int hz=adts_rate(carry);
+    if(next_pts_valid && hz>0)
+     next_pts+=(uint64_t)(1024u*((carry[6]&3u)+1u))*90000ULL/(unsigned)hz;
+    carry_len-=n;memmove(carry,carry+n,carry_len);
   }
  }
 }
