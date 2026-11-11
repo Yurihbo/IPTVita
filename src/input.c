@@ -4,6 +4,7 @@
 #include "player.h"
 #include "stream_diagnostic.h"
 #include "aac_audio.h"
+#include "video_preview.h"
 #include <psp2/ctrl.h>
 #include <string.h>
 #include <stdio.h>
@@ -100,7 +101,11 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
     if(ui->browsing) {
         if(pressed&SCE_CTRL_CIRCLE) {if(ui->channel_details) {iptvita_stream_stop(ui);ui->channel_details=0;}else ui->browsing=0;return 0;}
         if(ui->channel_details) {
-            if((pressed&SCE_CTRL_CROSS) && ui->stream_stage>=1 && ui->stream_stage<=6) {ui->stream_paused=!ui->stream_paused;iptvita_audio_pause(ui->stream_paused);}
+            if((pressed&SCE_CTRL_CROSS) && ui->stream_stage>=1 && ui->stream_stage<=6) {
+                ui->stream_paused=!ui->stream_paused;
+                iptvita_audio_pause(ui->stream_paused);
+                if(!ui->stream_paused)iptvita_preview_resume();
+            }
             if(pressed&SCE_CTRL_RTRIGGER) ui->stream_info_visible=!ui->stream_info_visible;
             if(pressed&SCE_CTRL_LTRIGGER) ui->stream_fill_screen=!ui->stream_fill_screen;
             if((pressed&SCE_CTRL_TRIANGLE) && ui->playlist.count>0)
