@@ -492,8 +492,13 @@ void iptvita_ui_render(const IptvitaUi *ui)
             snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
             label(25,463,details,2,p.white);
             IptvitaPreviewStats v=iptvita_preview_stats();
-            snprintf(details,sizeof(details),"AVC FASE %d / IDR %u / AGUARDA %d / RECUP %u / FILA %u / DESC %u",v.decoder_phase,v.keyframes,v.waiting_for_idr,v.recoveries,v.queued,v.dropped);
+            snprintf(details,sizeof(details),"AVC %d IDR %u REC %u FILA %u DESC %u OUT %u/%u DEC %uus",v.decoder_phase,v.keyframes,v.recoveries,v.queued,v.dropped,v.presented,v.decoded,v.decode_avg_us);
             label(25,485,details,2,p.muted);
+            if(audio.output_pts_valid) {
+                snprintf(details,sizeof(details),"AAC PTS %llu FILA %u DESC %u",
+                   (unsigned long long)audio.output_pts,audio.buffered,audio.dropped);
+                label(530,505,details,1,p.muted);
+            }
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
                   tr(ui,"X PAUSAR  R1 INFO  L1 TELA  O VOLTAR","X PAUSE  R1 INFO  L1 SCREEN  O BACK"),2,p.accent);
