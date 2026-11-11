@@ -2,7 +2,7 @@ name: Build IPTVita VPK
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
   workflow_dispatch:
 
 permissions:
