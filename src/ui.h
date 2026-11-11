@@ -42,6 +42,8 @@ typedef struct {
     unsigned long long stream_refresh_at;
     char stream_media_url[8192];
     char stream_last_segment[8192];
+    char stream_prefetch_next_url[8192];
+    unsigned long long stream_prefetch_next_sequence;
     int stream_cipher_method;
     unsigned char stream_key[16],stream_iv[16];
     char stream_key_url[8192],stream_segment_url[8192];

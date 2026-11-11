@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "network.h"
 #include "video_preview.h"
+#include "network.h"
 #include "aac_audio.h"
 #include <vita2d.h>
 #include <psp2/kernel/processmgr.h>
@@ -503,6 +504,12 @@ void iptvita_ui_render(const IptvitaUi *ui)
                 snprintf(extra,sizeof(extra),"B %u / PTS REORD %u / ATRASADOS %u",
                          v.b_frames,v.reordered_pts,v.late_pictures);
                 label(615,444,extra,2,p.accent);
+            }
+            {
+                char cache_line[64];
+                snprintf(cache_line,sizeof(cache_line),"HLS CACHE %u HITS",
+                         iptvita_network_prefetch_hits());
+                label(25,444,cache_line,2,p.accent);
             }
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
