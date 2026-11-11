@@ -106,6 +106,16 @@ static void consume_nal(IptvitaH264Au *a,const unsigned char *data,size_t n)
  }
  a->units++;
 }
+static void advance_pending_pts(IptvitaH264Au *a,size_t consumed)
+{
+ if(!a->has_pes_cutover)return;
+ if(consumed>=a->next_pes_offset) {
+  a->pending_pts=a->next_pes_pts;
+  a->pending_has_pts=a->next_pes_has_pts;
+  a->next_pes_offset=0;
+  a->has_pes_cutover=0;
+ }else a->next_pes_offset-=consumed;
+}
 static void consume_pending(IptvitaH264Au *a,int finish)
 {
  while(a->pending_used) {
@@ -113,14 +123,20 @@ static void consume_pending(IptvitaH264Au *a,int finish)
   if(at>=a->pending_used) {
    /* A start code can span PES boundaries; preserve the final three bytes. */
    if(!finish && a->pending_used>3) {
-    memmove(a->pending,a->pending+a->pending_used-3,3);
+    size_t consumed=a->pending_used-3;
+    memmove(a->pending,a->pending+consumed,3);
     a->pending_used=3;
-   } else if(finish)a->pending_used=0;
+    advance_pending_pts(a,consumed);
+   } else if(finish) {
+    advance_pending_pts(a,a->pending_used);
+    a->pending_used=0;
+   }
    return;
   }
   if(at) {
    memmove(a->pending,a->pending+at,a->pending_used-at);
    a->pending_used-=at;
+   advance_pending_pts(a,at);
   }
   size_t start=prefix(a->pending,a->pending_used,0);
   if(!start)return;
@@ -133,9 +149,14 @@ static void consume_pending(IptvitaH264Au *a,int finish)
    }
    consume_nal(a,a->pending,len);
   }
-  if(len>=a->pending_used){a->pending_used=0;return;}
+  if(len>=a->pending_used) {
+   advance_pending_pts(a,a->pending_used);
+   a->pending_used=0;
+   return;
+  }
   memmove(a->pending,a->pending+len,a->pending_used-len);
   a->pending_used-=len;
+  advance_pending_pts(a,len);
  }
 }
 int iptvita_h264_au_open(IptvitaH264Au *a,IptvitaAuSink sink,void *user)
@@ -155,7 +176,17 @@ void iptvita_h264_au_pes(void *user,const unsigned char *data,size_t size,uint64
 {
  IptvitaH264Au *a=(IptvitaH264Au*)user;
  if(!a || !a->buffer || !a->pending || !data || !size)return;
- if(!a->pending_used){a->pending_pts=pts;a->pending_has_pts=has_pts;}
+ if(!a->pending_used) {
+  a->pending_pts=pts;a->pending_has_pts=has_pts;
+  a->has_pes_cutover=0;
+ }else{
+  /* The old trailing NAL still belongs to the previous PES; only NALs
+   * starting at/after the newly appended payload use the new timestamp. */
+  a->next_pes_offset=a->pending_used;
+  a->next_pes_pts=pts;
+  a->next_pes_has_pts=has_pts;
+  a->has_pes_cutover=1;
+ }
  if(size>a->pending_capacity-a->pending_used) {
   consume_pending(a,0);
   if(size>a->pending_capacity-a->pending_used) {
