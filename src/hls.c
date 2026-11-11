@@ -34,6 +34,22 @@ int iptvita_hls_inspect_next_quality(const char *text,const char *base,IptvitaHl
  unsigned char current_iv[16]={0};
  char current_key[IPTVITA_HLS_URL_MAX]={0};
  unsigned long long sequence=0;
+ /* Live HLS windows often contain several older segments. Joining at the
+  * first one creates a catch-up burst (the apparent rewind/fast-forward).
+  * Start three segments behind the live edge for a small jitter reserve.
+  * VOD playlists must still start at their beginning. */
+ unsigned initial_count=0;
+ int endlist=strstr(p,"#EXT-X-ENDLIST")!=NULL;
+ const char *scan=p;
+ while(*scan) {
+  const char *end=strchr(scan,'\n');
+  if(!end)end=scan+strlen(scan);
+  const char *line=scan;
+  while(line<end && isspace((unsigned char)*line))++line;
+  if(line<end && *line!='#')++initial_count;
+  scan=*end?end+1:end;
+ }
+ unsigned live_start=(!endlist && initial_count>3)?initial_count-3:0;
  while(*p) {
   const char *e=strchr(p,'\n');
   if(!e)e=p+strlen(p);
@@ -143,7 +159,8 @@ int iptvita_hls_inspect_next_quality(const char *text,const char *base,IptvitaHl
     /* On initial tune-in, use newest segment. Afterwards consume each
      * numbered segment in order so audio and video are not skipped. */
     int select=have_previous ?
-      (!out->first_media[0] && segment_number>last_sequence) : 1;
+      (!out->first_media[0] && segment_number>last_sequence) :
+      (!out->first_media[0] && (out->segments-1)>=live_start);
     if(select) {
      if(resolve(base,ref,out->first_media,sizeof(out->first_media))<0)return -3;
      out->cipher_method=method;
