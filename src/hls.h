@@ -17,6 +17,8 @@ typedef struct {
 /* Inspect HLS text without downloading or decoding video. */
 int iptvita_hls_inspect(const char *text, const char *base, IptvitaHlsInfo *out);
 /* Choose next segment after the previous media sequence rather than skipping ahead. */
+int iptvita_hls_inspect_next_quality(const char *text,const char *base,IptvitaHlsInfo *out,
+                             unsigned long long last_sequence,int have_previous,int prefer_hd);
 int iptvita_hls_inspect_next(const char *text,const char *base,IptvitaHlsInfo *out,
                              unsigned long long last_sequence,int have_previous);
 #endif
