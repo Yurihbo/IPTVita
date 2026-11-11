@@ -2,7 +2,7 @@ name: Build IPTVita VPK
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/avc-worker-av-sync-20261111]
   workflow_dispatch:
 
 permissions:
