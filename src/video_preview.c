@@ -5,6 +5,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include "h264_au.h"
+#include "aac_audio.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,6 +36,11 @@ static unsigned long long due_at;
 static int playback_primed;
 static uint64_t previous_pts;
 static int previous_pts_valid;
+/* Video-clock fallback uses stream PTS rather than cumulative frame delays. */
+static uint64_t video_base_pts;
+static unsigned long long video_base_us;
+static int video_clock_valid;
+static int audio_master_active;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
 
 
@@ -47,6 +53,7 @@ void iptvita_preview_reset(void)
   head=(head+1)%FRAME_QUEUE;count--;
  }
  head=tail=0;total_bytes=0;due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
+ video_clock_valid=audio_master_active=0;video_base_pts=video_base_us=0;
  queue_unlock();
  newest_pts=0;have_newest_pts=0;
  if(open)iptvita_avc_close(&dec);
@@ -213,6 +220,7 @@ void iptvita_preview_tick(void)
   playback_primed=0;
   due_at=0;
   previous_pts_valid=0;
+  video_clock_valid=audio_master_active=0;
   queue_unlock();
   return;
  }
@@ -222,9 +230,57 @@ void iptvita_preview_tick(void)
   playback_primed=1;
   due_at=0;
   previous_pts_valid=0;
+  video_clock_valid=audio_master_active=0;
  }
  unsigned long long now=clock_us();
- if(due_at && now<due_at){queue_unlock();return;}
+ /* Audio is the preferred reference only while its playhead is fresh.
+  * MPEG timestamps wrap every 2^33 ticks; compare the shortest signed
+  * difference so the rollover cannot look like a multi-hour rewind. */
+ if(frames[head].has_pts) {
+  uint64_t audio_pts=0;
+  int have_audio=iptvita_audio_clock(&audio_pts);
+  int64_t delta=0;
+  if(have_audio) {
+   uint64_t diff=(frames[head].pts-audio_pts)&((1ULL<<33)-1);
+   delta=diff>=(1ULL<<32)?(int64_t)diff-(1LL<<33):(int64_t)diff;
+  }
+  if(have_audio && delta > -90000LL*8 && delta < 90000LL*8) {
+   /* Do not drive the video ahead of audio. Keep a small tolerance for
+    * the renderer/PCM device's own buffering latency. */
+   audio_master_active=1;
+   if(delta>4500LL) {
+    st.av_sync=1;
+    queue_unlock();
+    return;
+   }
+   st.av_sync=1;
+  } else {
+   /* No matching audio timestamps (including separate renditions):
+    * fall back to a PTS-paced video clock instead of freezing. */
+   if(audio_master_active)video_clock_valid=0;
+   audio_master_active=0;
+   st.av_sync=0;
+   if(!video_clock_valid) {
+    video_base_pts=frames[head].pts;
+    video_base_us=now;
+    video_clock_valid=1;
+   }
+   uint64_t diff=(frames[head].pts-video_base_pts)&((1ULL<<33)-1);
+   int64_t ticks=diff>=(1ULL<<32)?(int64_t)diff-(1LL<<33):(int64_t)diff;
+   if(ticks < -90000LL*3 || ticks > 90000LL*30) {
+    video_base_pts=frames[head].pts;
+    video_base_us=now;
+   }else if(ticks>0) {
+    unsigned long long due=video_base_us+(unsigned long long)ticks*100ULL/9ULL;
+    if(due>now && due-now<1500000ULL){queue_unlock();return;}
+    if(now>due+750000ULL) {
+     video_base_pts=frames[head].pts;
+     video_base_us=now;
+    }
+   }
+  }
+ }else st.av_sync=0;
+ if(!frames[head].has_pts && due_at && now<due_at){queue_unlock();return;}
  EncodedFrame item=frames[head];
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
@@ -248,6 +304,15 @@ void iptvita_preview_tick(void)
   due_at+=duration;
  else
   due_at=now+duration;
+}
+void iptvita_preview_resume(void)
+{
+ /* The next decoded frame re-anchors the local clock after a user pause. */
+ queue_lock();
+ due_at=0;
+ video_clock_valid=audio_master_active=0;
+ previous_pts_valid=0;
+ queue_unlock();
 }
 IptvitaPreviewStats iptvita_preview_stats(void){return st;}
 void iptvita_preview_draw(int x,int y,int width,int height,int fill)

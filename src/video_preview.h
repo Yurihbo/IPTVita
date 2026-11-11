@@ -7,6 +7,7 @@ typedef struct {
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
  unsigned long long last_output_us;
  int buffer_percent;
+ int av_sync; /* 1: audio master clock; 0: local video clock */
  int waiting_for_idr;
  int fatal;
  int decoder_phase; /* 0 idle, 1 init failure, 2 decode, 3 output seen */
@@ -16,5 +17,6 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
 IptvitaPreviewStats iptvita_preview_stats(void);
 /* Consume at most one compressed access unit per video tick. */
 void iptvita_preview_tick(void);
+void iptvita_preview_resume(void);
 void iptvita_preview_draw(int x,int y,int width,int height,int fill);
 #endif

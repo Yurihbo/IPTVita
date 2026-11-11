@@ -2,6 +2,7 @@
 #include <psp2/audiodec.h>
 #include <psp2/audioout.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/kernel/processmgr.h>
 #include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 #define PREBUFFER 72
 #define MAX_ADTS 8192
 static const int rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
-typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];} Frame;
+typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];uint64_t pts90k;int valid_pts;} Frame;
 static Frame fifo[FIFO];
 static unsigned head,tail,count;
 static volatile int running,paused;
@@ -24,6 +25,12 @@ static unsigned char *es,*pcm;
 static size_t es_cap;
 static unsigned char carry[MAX_ADTS];
 static size_t carry_len;
+/* Producer extends incoming PES timestamps across ADTS frames.
+ * Consumer publishes a fresh playhead only after successful audio output. */
+static uint64_t enqueue_pts,played_pts;
+static unsigned long long played_at;
+static int enqueue_valid,played_valid;
+static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
 
 static void lock(void){if(mutex>=0)sceKernelLockMutex(mutex,1,NULL);}
 static void unlock(void){if(mutex>=0)sceKernelUnlockMutex(mutex,1);}
@@ -87,7 +94,7 @@ static int worker(SceSize args,void *argp)
   if(primed && count && !paused && cur) {
    *cur=fifo[head];head=(head+1)%FIFO;count--;got=1;
   }
-  if(!count)primed=0;
+  if(!count){primed=0;played_valid=0;}
   stats.buffered=count;
   stats.primed=primed;
   unlock();
@@ -112,7 +119,17 @@ static int worker(SceSize args,void *argp)
   }
   rc=sceAudioOutOutput(port,pcm);
   if(rc<0)stats.error=rc;
-  else {stats.played++;stats.rate=hz;stats.channels=ch;}
+  else {
+   lock();
+   stats.played++;stats.rate=hz;stats.channels=ch;
+   if(cur->valid_pts) {
+    /* Output is blocking; the newest completed buffer ends at this time. */
+    played_pts=(cur->pts90k + ((uint64_t)n*90000u)/(unsigned)hz) & ((1ULL<<33)-1);
+    played_at=clock_us();
+    played_valid=1;
+   }else played_valid=0;
+   unlock();
+  }
  }
  free(cur);
  close_audio();
@@ -124,6 +141,7 @@ int iptvita_audio_start(void)
  if(running)return 0;
  memset(&stats,0,sizeof stats);
  count=head=tail=0;carry_len=0;paused=0;primed=0;
+ enqueue_pts=played_pts=0;played_at=0;enqueue_valid=played_valid=0;
  mutex=sceKernelCreateMutex("iptvita_audio_lock",0,0,NULL);
  if(mutex<0)return -1;
  running=1;
@@ -136,8 +154,11 @@ int iptvita_audio_start(void)
  * across PES boundaries. Unsupported LATM is not assumed to be ADTS. */
 void iptvita_audio_push_pes(void *user,const unsigned char *data,size_t bytes,uint64_t pts,int has_pts)
 {
- (void)user;(void)pts;(void)has_pts;
+ (void)user;
  if(!running || !data)return;
+ /* An incoming PES timestamp anchors the first ADTS frame it contains.
+  * Some live PES packets lack PTS; continue from the previous audio frame. */
+ if(has_pts){enqueue_pts=pts&((1ULL<<33)-1);enqueue_valid=1;}
  for(size_t i=0;i<bytes;i++) {
   if(carry_len==MAX_ADTS){carry_len=0;stats.dropped++;}
   carry[carry_len++]=data[i];
@@ -153,15 +174,41 @@ void iptvita_audio_push_pes(void *user,const unsigned char *data,size_t bytes,ui
    if(count<FIFO) {
     Frame *f=&fifo[tail];
     f->len=(unsigned short)n;memcpy(f->bytes,carry,n);
+    f->pts90k=enqueue_pts;f->valid_pts=enqueue_valid;
     tail=(tail+1)%FIFO;count++;stats.queued++;
    }else stats.dropped++;
    stats.buffered=count;
    unlock();
+   if(enqueue_valid) {
+    int hz=adts_rate(carry);
+    if(hz>0)enqueue_pts=(enqueue_pts+1024ULL*90000ULL/(unsigned)hz)&((1ULL<<33)-1);
+    else enqueue_valid=0;
+   }
    carry_len-=n;memmove(carry,carry+n,carry_len);
   }
  }
 }
-void iptvita_audio_pause(int on){paused=on?1:0;}
+void iptvita_audio_pause(int on)
+{
+ lock();
+ paused=on?1:0;
+ if(paused)played_valid=0;
+ unlock();
+}
+int iptvita_audio_clock(uint64_t *pts90k)
+{
+ if(!pts90k || !running)return 0;
+ int ok=0;
+ lock();
+ unsigned long long now=clock_us();
+ if(!paused && played_valid && now>=played_at &&
+    now-played_at<400000ULL) {
+  *pts90k=(played_pts+((now-played_at)*9ULL)/100ULL)&((1ULL<<33)-1);
+  ok=1;
+ }
+ unlock();
+ return ok;
+}
 IptvitaAudioStats iptvita_audio_stats(void){return stats;}
 void iptvita_audio_stop(void)
 {
@@ -170,4 +217,5 @@ void iptvita_audio_stop(void)
  if(thread>=0){sceKernelWaitThreadEnd(thread,NULL,NULL);thread=-1;}
  if(mutex>=0){sceKernelDeleteMutex(mutex);mutex=-1;}
  count=head=tail=0;carry_len=0;primed=0;
+ enqueue_valid=played_valid=0;
 }
