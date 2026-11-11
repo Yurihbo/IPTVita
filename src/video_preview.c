@@ -5,6 +5,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include "h264_au.h"
+#include "aac_audio.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,6 +20,8 @@ static SceUID queue_mutex=-1, decode_thread=-1;
 static volatile int thread_running,thread_paused;
 static unsigned long long decode_total_us;
 static unsigned decode_samples;
+static int video_pts_offset_valid;
+static int64_t video_pts_offset;
 static vita2d_texture *texture;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
@@ -45,6 +48,7 @@ void iptvita_preview_reset(void)
  thread_running=0;
  if(decode_thread>=0){
   sceKernelWaitThreadEnd(decode_thread,NULL,NULL);
+  sceKernelDeleteThread(decode_thread);
   decode_thread=-1;
  }
  while(count){free(frames[head].data);head=(head+1)%FRAME_QUEUE;count--;}
@@ -59,6 +63,7 @@ void iptvita_preview_reset(void)
  memset(&st,0,sizeof st);
  wait_for_idr=1;recovery_attempts=0;reference_frames=4;decoder_fatal=0;
  decode_total_us=0;decode_samples=0;thread_paused=0;st.waiting_for_idr=1;
+ video_pts_offset_valid=0;video_pts_offset=0;
  queue_mutex=sceKernelCreateMutex("iptvita_video_queue",0,0,NULL);
  if(queue_mutex<0){st.decode_error=queue_mutex;st.fatal=1;return;}
  thread_running=1;
@@ -151,12 +156,14 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     * Keep the exact SDK error visible until the channel is reopened. */
    decoder_fatal=1;
    st.fatal=1;
+   lock_queue();
    while(count) {
     free(frames[head].data);
     head=(head+1)%FRAME_QUEUE;
     count--;
    }
    total_bytes=0;tail=head;st.queued=0;
+   unlock_queue();
   }
   return;
  }
@@ -228,6 +235,17 @@ static int decode_worker(SceSize argc,void *argv)
   unlock_queue();
   if(!item.data){sceKernelDelayThread(2500);continue;}
   unsigned long long started=clock_us();
+  IptvitaAudioStats audio=iptvita_audio_stats();
+  int delta_ms=0,clock_valid=0;
+  if(item.has_pts && audio.output_pts_valid) {
+   int64_t raw=(int64_t)item.pts-(int64_t)audio.output_pts;
+   /* Some channels use separate timestamp origins for audio and video.
+    * Do not force synchronization across unrelated 90 kHz timebases. */
+   if(raw>-450000LL && raw<450000LL) {
+    clock_valid=1;delta_ms=(int)(raw/90);
+    st.av_delta_ms=delta_ms;
+   }
+  }
   decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
   unsigned long long elapsed=clock_us()-started;
   decode_total_us+=elapsed;decode_samples++;
@@ -239,10 +257,16 @@ static int decode_worker(SceSize argc,void *argv)
    if(delta>=900 && delta<=9000)duration=delta*1000000ULL/90000ULL;
   }
   previous_pts=item.pts;previous_pts_valid=item.has_pts;
-  /* Deadline is absolute, so decoding time does not accumulate as drift. */
+  /* Audio is the playback master when both media clocks share a timeline.
+   * Never skip compressed P/B units: dependent H264 frames need their refs.
+   * Decode faster when behind, slow down only while video leads audio. */
+  if(clock_valid) {
+   if(delta_ms>130)duration+=(unsigned long long)(delta_ms>350?350:delta_ms-130)*1000ULL;
+   else if(delta_ms< -180)duration=1000ULL;
+  }
   due_at=(due_at && started<due_at+250000ULL)?due_at+duration:started+duration;
  }
- sceKernelExitDeleteThread(0);
+ sceKernelExitThread(0);
  return 0;
 }
 void iptvita_preview_tick(void)
