@@ -38,6 +38,7 @@ typedef struct {
     int stream_fill_screen; /* L1 toggles contain vs center-cropped fill */
     unsigned long long stream_last_sequence,stream_selected_sequence;
     int stream_has_sequence;
+    unsigned stream_failure_count;
     unsigned long long stream_refresh_at;
     char stream_media_url[8192];
     char stream_last_segment[8192];
