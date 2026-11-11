@@ -134,10 +134,11 @@ static void inspect_playlist(IptvitaUi *ui)
  IptvitaHlsInfo *info=(IptvitaHlsInfo*)malloc(sizeof(*info));
  if(!info){free(text);fail(ui,-12);return;}
  int alternate=ui->stream_stage==7;
- int rc=iptvita_hls_inspect_next(text,ui->stream_url,info,
+ int rc=iptvita_hls_inspect_next_quality(text,ui->stream_url,info,
        alternate?ui->stream_alt_audio_last_sequence:ui->stream_last_sequence,
        alternate?ui->stream_alt_audio_has_sequence:
-          (ui->stream_has_sequence && ui->stream_stage==2));
+          (ui->stream_has_sequence && ui->stream_stage==2),
+       !ui->stream_quality_sd);
  free(text);
  if(rc<0){free(info);fail(ui,-10);return;}
  if(info->cipher_method==2) {
@@ -342,6 +343,17 @@ void iptvita_stream_poll(IptvitaUi *ui)
  if(ui->stream_stage==5) {
   IptvitaPreviewStats video=iptvita_preview_stats();
   if(video.fatal) {
+   /* An HD stream may exceed hardware AVC reference limits despite being
+    * advertised as 720p. Recover once by retuning the original master
+    * with conservative SD selection; never loop fallback attempts. */
+   if(!ui->stream_hd_fallback_used && !ui->stream_quality_sd &&
+      ui->stream_source_url[0] && !ui->stream_paused) {
+    ui->stream_hd_fallback_used=1;
+    ui->stream_quality_sd=1;
+    ui->stream_stage=-29;
+    iptvita_stream_start(ui,ui->stream_source_url);
+    return;
+   }
    ui->stream_decode_error=video.decode_error;
    ui->stream_stage=-29;
    iptvita_audio_pause(1);
