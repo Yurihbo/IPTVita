@@ -48,8 +48,49 @@ static uint64_t video_base_pts;
 static unsigned long long video_base_us;
 static int video_clock_valid;
 static int audio_master_active;
+/* The hardware decoder may buffer B pictures and return a picture on a later
+ * access unit. Keep its output in the existing RGBA buffer until presentation
+ * time; don't schedule compressed decode-order AUs by presentation PTS. */
+#define PTS_WINDOW 24
+static uint64_t pending_pts[PTS_WINDOW];
+static unsigned pending_count;
+static uint64_t output_pts, last_shown_pts;
+static int output_has_pts, output_ready, last_shown_valid;
+static unsigned long long output_queued_us;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
-
+static int64_t pts_difference(uint64_t a,uint64_t b)
+{
+ uint64_t d=(a-b)&((1ULL<<33)-1);
+ return d>=(1ULL<<32)?(int64_t)d-(1LL<<33):(int64_t)d;
+}
+static void pts_push(uint64_t pts)
+{
+ if(pending_count==PTS_WINDOW) {
+  memmove(pending_pts,pending_pts+1,(PTS_WINDOW-1)*sizeof(pending_pts[0]));
+  --pending_count;
+ }
+ pending_pts[pending_count++]=pts&((1ULL<<33)-1);
+}
+static int pts_take(uint64_t *pts)
+{
+ if(!pending_count)return 0;
+ /* Decoder submission order differs from display order for B pictures.
+  * Use the earliest presentation timestamp from AUs already submitted. */
+ unsigned best=0;
+ for(unsigned i=1;i<pending_count;i++)
+  if(pts_difference(pending_pts[i],pending_pts[best])<0)best=i;
+ *pts=pending_pts[best];
+ memmove(pending_pts+best,pending_pts+best+1,
+         (pending_count-best-1)*sizeof(pending_pts[0]));
+ --pending_count;
+ return 1;
+}
+static void clear_presentation(void)
+{
+ pending_count=0;
+ output_ready=output_has_pts=last_shown_valid=0;
+ output_queued_us=0;output_pts=last_shown_pts=0;
+}
 
 void iptvita_preview_reset(void)
 {
@@ -63,6 +104,7 @@ void iptvita_preview_reset(void)
  video_clock_valid=audio_master_active=0;video_base_pts=video_base_us=0;
  rebuffer_target=REBUFFER_MIN;last_underrun_us=last_target_decay_us=0;
  saw_picture=0;
+ clear_presentation();
  queue_unlock();
  newest_pts=0;have_newest_pts=0;
  if(open)iptvita_avc_close(&dec);
@@ -144,6 +186,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     * Live streams can require more than four reference frames. */
    iptvita_avc_close(&dec);
    open=0;
+   clear_presentation();
    wait_for_idr=1;
    recovery_attempts++;
    st.recoveries=recovery_attempts;
@@ -158,6 +201,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     * Keep the exact SDK error visible until the channel is reopened. */
    decoder_fatal=1;
    st.fatal=1;
+   clear_presentation();
    queue_lock();
    while(count) {
     free(frames[head].data);
@@ -173,35 +217,28 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  st.waiting_for_idr=0;
  st.decode_error=0;
  if(rc==0)return;
- st.decoded++;
- saw_picture=1;
- st.last_output_us=clock_us();
+ /* AVC may return the output for an earlier AU. The hardware produces
+  * decoded pictures in its display sequence; the caller only schedules
+  * presentation after the output exists. */
+ output_has_pts=pts_take(&output_pts);
+ output_queued_us=clock_us();
+ output_ready=1;
  st.decoder_phase=3;
- unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
- unsigned dst_stride=vita2d_texture_get_stride(texture);
- unsigned src_stride=(unsigned)((st.width+15)&~15)*4u;
- if(!dst || dst_stride<(unsigned)st.width*4u){st.decode_error=-32;return;}
- for(int y=0;y<st.height;y++)
-  memcpy(dst+(size_t)y*dst_stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
  if(!data || !size || size>IPTVITA_H264_AU_MAX || decoder_fatal)return;
  queue_lock();
- /* Video decoder accepts B-frames out of PTS order (usually a few hundred
-  * milliseconds), but a whole fragment replaying seconds into the past
-  * must not be presented as live content. Reset only at a keyframe across
-  * an actual large timestamp discontinuity. */
+ /* Preserve B-pictures with PTS earlier than the reference P-picture
+  * sent before them. The hardware needs ALL reference and dependent AUs. */
  if(has_pts) {
   if(have_newest_pts && pts<newest_pts) {
    uint64_t behind=newest_pts-pts;
    if(behind>90000ULL*15 && key) {
     newest_pts=pts;
     previous_pts_valid=0;
-   }else if(behind>90000ULL) {
-    st.dropped++;
-    queue_unlock();
-    return;
+    /* A discontinuity should reset the presentation clock. */
+    video_clock_valid=audio_master_active=0;
    }
   }
   if(!have_newest_pts || pts>newest_pts)newest_pts=pts;
@@ -226,10 +263,69 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
  queue_unlock();
 }
+static void present_picture(void)
+{
+ if(!output_ready || !texture || !rgba)return;
+ unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
+ unsigned dst_stride=vita2d_texture_get_stride(texture);
+ unsigned src_stride=(unsigned)((st.width+15)&~15)*4u;
+ if(!dst || dst_stride<(unsigned)st.width*4u) {st.decode_error=-32;output_ready=0;return;}
+ for(int y=0;y<st.height;y++)
+  memcpy(dst+(size_t)y*dst_stride,rgba+(size_t)y*src_stride,(size_t)st.width*4u);
+ st.decoded++;
+ saw_picture=1;
+ st.last_output_us=clock_us();
+ if(output_has_pts){last_shown_pts=output_pts;last_shown_valid=1;}
+ output_ready=0;
+}
+static int presentation_due(unsigned long long now)
+{
+ if(!output_ready)return 0;
+ if(!output_has_pts)return !due_at || now>=due_at;
+ uint64_t audio_pts=0;
+ if(iptvita_audio_clock(&audio_pts)) {
+  int64_t delta=pts_difference(output_pts,audio_pts);
+  if(delta>-90000LL*8 && delta<90000LL*8) {
+   st.av_sync=1;
+   audio_master_active=1;
+   if(delta>4500LL && now-output_queued_us<1000000ULL)return 0;
+   return 1;
+  }
+ }
+ st.av_sync=0;audio_master_active=0;
+ if(!video_clock_valid) {
+  video_base_pts=output_pts;
+  video_base_us=now;
+  video_clock_valid=1;
+  return 1;
+ }
+ int64_t delta=pts_difference(output_pts,video_base_pts);
+ if(delta < -90000LL*3 || delta > 90000LL*30) {
+  video_base_pts=output_pts;video_base_us=now;return 1;
+ }
+ if(delta>0) {
+  unsigned long long due=video_base_us+(unsigned long long)delta*100ULL/9ULL;
+  if(due>now && due-now<1000000ULL && now-output_queued_us<1000000ULL)return 0;
+ }
+ return 1;
+}
 void iptvita_preview_tick(void)
 {
- queue_lock();
+ /* Never overwrite the single RGBA output while it is waiting for display.
+  * Display order follows decoder output, rather than input AU order. */
  unsigned long long now=clock_us();
+ if(output_ready) {
+  if(presentation_due(now)) {
+   if(output_has_pts && last_shown_valid &&
+      pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
+    /* Skip an obsolete presentation, never skip its decode operation. */
+    st.dropped++;output_ready=0;
+  }else present_picture();
+  }
+  return;
+ }
+ queue_lock();
+ now=clock_us();
  if(!count) {
   /* If a previously running channel empties, increase the reserve for
    * repeated network stalls, but bound it to protect Vita memory. */
@@ -271,10 +367,9 @@ void iptvita_preview_tick(void)
   rebuffer_target-=REBUFFER_STEP;
   last_target_decay_us=now;
  }
- /* Audio is the preferred reference only while its playhead is fresh.
-  * MPEG timestamps wrap every 2^33 ticks; compare the shortest signed
-  * difference so the rollover cannot look like a multi-hour rewind. */
- if(frames[head].has_pts) {
+ /* Decode in H.264 bitstream order; B-picture PTS may precede an
+  * already-submitted P picture, so timestamps cannot gate AU decoding. */
+ if(0 && frames[head].has_pts) {
   uint64_t audio_pts=0;
   int have_audio=iptvita_audio_clock(&audio_pts);
   int64_t delta=0;
@@ -326,6 +421,7 @@ void iptvita_preview_tick(void)
  st.buffer_target=rebuffer_target;
  st.buffer_percent=count>=rebuffer_target?100:(int)(count*100u/rebuffer_target);
  queue_unlock();
+ if(item.has_pts)pts_push(item.pts);
  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
  free(item.data);
  unsigned long long duration=33333ULL;
