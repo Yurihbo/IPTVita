@@ -395,7 +395,7 @@ void iptvita_stream_stop(IptvitaUi *ui)
 {
  close_pipeline();
  iptvita_audio_stop();
- iptvita_preview_reset();
+ iptvita_preview_shutdown();
  if(ui) {
   ui->stream_stage=0;
   ui->stream_paused=0;
