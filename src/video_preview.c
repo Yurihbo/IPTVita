@@ -24,7 +24,10 @@ static int have_newest_pts;
 /* Short compressed-frame cache absorbs download gaps without requiring
  * a large decoded frame pool on the Vita. Re-prime after an underrun. */
 #define START_FRAMES 18
-#define REBUFFER_FRAMES 12
+#define REBUFFER_MIN 12
+#define REBUFFER_MAX 48
+#define REBUFFER_STEP 6
+#define STABLE_DECAY_US 30000000ULL
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
 static EncodedFrame frames[FRAME_QUEUE];
 static unsigned head,tail,count;
@@ -34,6 +37,10 @@ static void queue_unlock(void){if(queue_mutex>=0)sceKernelUnlockMutex(queue_mute
 static size_t total_bytes;
 static unsigned long long due_at;
 static int playback_primed;
+static unsigned rebuffer_target=REBUFFER_MIN;
+static unsigned long long last_underrun_us;
+static unsigned long long last_target_decay_us;
+static int saw_picture;
 static uint64_t previous_pts;
 static int previous_pts_valid;
 /* Video-clock fallback uses stream PTS rather than cumulative frame delays. */
@@ -54,6 +61,8 @@ void iptvita_preview_reset(void)
  }
  head=tail=0;total_bytes=0;due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
  video_clock_valid=audio_master_active=0;video_base_pts=video_base_us=0;
+ rebuffer_target=REBUFFER_MIN;last_underrun_us=last_target_decay_us=0;
+ saw_picture=0;
  queue_unlock();
  newest_pts=0;have_newest_pts=0;
  if(open)iptvita_avc_close(&dec);
@@ -63,6 +72,8 @@ void iptvita_preview_reset(void)
  memset(&st,0,sizeof st);
  wait_for_idr=1;recovery_attempts=0;reference_frames=4;decoder_fatal=0;
  st.waiting_for_idr=1;
+ st.buffering=1;
+ st.buffer_target=START_FRAMES;
 }
 static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
@@ -163,6 +174,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  st.decode_error=0;
  if(rc==0)return;
  st.decoded++;
+ saw_picture=1;
  st.last_output_us=clock_us();
  st.decoder_phase=3;
  unsigned char *dst=(unsigned char*)vita2d_texture_get_datap(texture);
@@ -209,15 +221,30 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  count++;
  total_bytes+=size;
  st.queued=count;
- st.buffer_percent=count>=30?100:(int)(count*100u/30u);
+ unsigned goal=playback_primed?rebuffer_target:(saw_picture?rebuffer_target:START_FRAMES);
+ st.buffer_target=goal;
+ st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
  queue_unlock();
 }
 void iptvita_preview_tick(void)
 {
  queue_lock();
+ unsigned long long now=clock_us();
  if(!count) {
-  /* Exhausted buffer: don't decode the next isolated frame immediately. */
+  /* If a previously running channel empties, increase the reserve for
+   * repeated network stalls, but bound it to protect Vita memory. */
+  if(playback_primed && saw_picture) {
+   if(!last_underrun_us || now-last_underrun_us<15000000ULL) {
+    if(rebuffer_target<REBUFFER_MAX)rebuffer_target+=REBUFFER_STEP;
+   }
+   last_underrun_us=now;
+   last_target_decay_us=now;
+   st.buffer_events++;
+  }
   playback_primed=0;
+  st.buffering=1;
+  st.buffer_target=saw_picture?rebuffer_target:START_FRAMES;
+  st.buffer_percent=0;
   due_at=0;
   previous_pts_valid=0;
   video_clock_valid=audio_master_active=0;
@@ -225,14 +252,25 @@ void iptvita_preview_tick(void)
   return;
  }
  if(!playback_primed) {
-  if(count<(st.decoded?REBUFFER_FRAMES:START_FRAMES) &&
-     total_bytes<QUEUE_BYTES/2) {queue_unlock();return;}
+  unsigned goal=saw_picture?rebuffer_target:START_FRAMES;
+  st.buffering=1;
+  st.buffer_target=goal;
+  st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
+  if(count<goal && total_bytes<QUEUE_BYTES/2) {queue_unlock();return;}
   playback_primed=1;
+  st.buffering=0;
   due_at=0;
   previous_pts_valid=0;
   video_clock_valid=audio_master_active=0;
+  last_target_decay_us=now;
  }
- unsigned long long now=clock_us();
+ /* A stable period gradually restores low-latency operation. */
+ if(saw_picture && playback_primed && rebuffer_target>REBUFFER_MIN &&
+    now>=last_target_decay_us &&
+    now-last_target_decay_us>STABLE_DECAY_US) {
+  rebuffer_target-=REBUFFER_STEP;
+  last_target_decay_us=now;
+ }
  /* Audio is the preferred reference only while its playhead is fresh.
   * MPEG timestamps wrap every 2^33 ticks; compare the shortest signed
   * difference so the rollover cannot look like a multi-hour rewind. */
@@ -285,7 +323,8 @@ void iptvita_preview_tick(void)
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
  st.queued=count;
- st.buffer_percent=count>=30?100:(int)(count*100u/30u);
+ st.buffer_target=rebuffer_target;
+ st.buffer_percent=count>=rebuffer_target?100:(int)(count*100u/rebuffer_target);
  queue_unlock();
  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
  free(item.data);
