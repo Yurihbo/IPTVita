@@ -7,6 +7,7 @@
 #include "aac_audio.h"
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,20 @@ static void feed_alt_audio(IptvitaUi *ui,const unsigned char *data,size_t size)
 }
 static IptvitaVideoPipeline pipeline;
 static int pipeline_open;
+/* A completed download is demuxed off the UI thread. The renderer remains
+ * on the main thread because vita2d/GXM resources are not thread-neutral. */
+static SceUID segment_thread=-1;
+static volatile int segment_done=0;
+static IptvitaUi *segment_ui;
+static void finish_segment_worker(void)
+{
+ if(segment_thread>=0) {
+  sceKernelWaitThreadEnd(segment_thread,NULL,NULL);
+  sceKernelDeleteThread(segment_thread);
+  segment_thread=-1;
+ }
+ segment_done=0;
+}
 static unsigned long long now_us(void) {return (unsigned long long)sceKernelGetProcessTimeWide();}
 static void close_pipeline(void)
 {
@@ -87,6 +102,7 @@ static int schedule(IptvitaUi *ui,const char *url,int stage)
 }
 int iptvita_stream_start(IptvitaUi *ui,const char *url)
 {
+ finish_segment_worker();
  if(!ui || !url || !url[0])return -1;
  if((ui->stream_stage>=1 && ui->stream_stage<=3) || ui->stream_stage==5 || ui->stream_stage==6)return -2;
  close_pipeline();
@@ -327,7 +343,7 @@ static void inspect_ts(IptvitaUi *ui)
  ui->stream_video_width=stats.width;
  ui->stream_video_height=stats.height;
  sceIoClose(fd);
- if(ui->stream_stage==3) {
+ if(ui->stream_stage==3 || ui->stream_stage==10) {
   strncpy(ui->stream_last_segment,ui->stream_url,sizeof(ui->stream_last_segment)-1);
   ui->stream_last_segment[sizeof(ui->stream_last_segment)-1]=0;
   ui->stream_has_sequence=1;
@@ -338,9 +354,21 @@ static void inspect_ts(IptvitaUi *ui)
   ui->stream_refresh_at=now_us()+200000ULL;
  }
 }
+static int segment_worker(SceSize args,void *argp)
+{
+ (void)args;(void)argp;
+ inspect_ts(segment_ui);
+ segment_done=1;
+ sceKernelExitThread(0);
+ return 0;
+}
 void iptvita_stream_poll(IptvitaUi *ui)
 {
  if(!ui)return;
+ if(ui->stream_stage==10) {
+  if(segment_done)finish_segment_worker();
+  return;
+ }
  if(ui->stream_stage==5) {
   IptvitaPreviewStats video=iptvita_preview_stats();
   if(video.fatal) {
@@ -402,7 +430,21 @@ void iptvita_stream_poll(IptvitaUi *ui)
   return;
  }
  ui->stream_failure_count=0;
- if(ui->stream_stage==3)inspect_ts(ui);
+ if(ui->stream_stage==3) {
+  segment_ui=ui;
+  segment_done=0;
+  segment_thread=sceKernelCreateThread("iptvita_demux",segment_worker,
+                                      0x10000100,128*1024,0,0,NULL);
+  if(segment_thread>=0) {
+   ui->stream_stage=10;
+   if(sceKernelStartThread(segment_thread,0,NULL)<0) {
+    sceKernelDeleteThread(segment_thread);
+    segment_thread=-1;
+    ui->stream_stage=3;
+    inspect_ts(ui);
+   }
+  }else inspect_ts(ui);
+ }
  else if(ui->stream_stage==8)inspect_alt_audio(ui);
  else if(ui->stream_stage==6 || ui->stream_stage==9)inspect_key(ui);
  else inspect_playlist(ui);
@@ -410,6 +452,7 @@ void iptvita_stream_poll(IptvitaUi *ui)
 
 void iptvita_stream_stop(IptvitaUi *ui)
 {
+ finish_segment_worker();
  close_pipeline();
  iptvita_audio_stop();
  iptvita_preview_reset();
