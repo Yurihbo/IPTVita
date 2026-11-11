@@ -53,6 +53,7 @@ static void display_clear(void)
 {
  display_lock();
  display_head=display_tail=display_count=0;
+ st.ready_pictures=0;
  for(unsigned i=0;i<DISPLAY_SLOTS;i++){free(display[i].pixels);display[i].pixels=NULL;}
  display_unlock();
 }
@@ -328,6 +329,8 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    slot->ready_us=clock_us();
    display_tail=(display_tail+1)%DISPLAY_SLOTS;
    display_count++;
+   st.ready_pictures=display_count;
+   if(display_count>st.peak_ready_pictures)st.peak_ready_pictures=display_count;
   } else st.dropped++;
  } else st.dropped++;
  display_unlock();
@@ -433,7 +436,7 @@ void iptvita_preview_tick(void)
   if(texture){texture_width=st.width;texture_height=st.height;}
  }
  display_lock();
- if(display_count) {
+ if(display_count && texture) {
   DisplaySlot *front=&display[display_head];
   output_pts=front->pts;
   output_has_pts=front->has_pts;
@@ -447,6 +450,7 @@ void iptvita_preview_tick(void)
    }else present_picture();
    display_head=(display_head+1)%DISPLAY_SLOTS;
    display_count--;
+   st.ready_pictures=display_count;
    output_ready=0;
   }else st.picture_waits++;
  }
