@@ -12,6 +12,7 @@
 #include <string.h>
 
 #define CACHE_PATH "ux0:data/IPTVita/online.m3u"
+#define PREFETCH_PATH "ux0:data/IPTVita/prefetch.ts"
 #define PACKAGED_CA_PATH "app0:cacert.pem"
 #define MAX_BYTES (6u*1024u*1024u)
 static char url_copy[8192];
@@ -20,6 +21,12 @@ static volatile int curl_error;
 static volatile int http_status;
 static int network_ready;
 static void *net_memory;
+/* A single speculative download uses its own file and URL, so it cannot
+ * race with the foreground playlist/segment worker's shared online.m3u. */
+static char prefetch_url[8192];
+static volatile int prefetch_state;
+static volatile unsigned prefetch_generation;
+static unsigned prefetch_hits;
 typedef struct {SceUID fd;size_t total;int failed;} Download;
 static size_t write_file(char *data,size_t size,size_t nmemb,void *userdata)
 {
@@ -162,9 +169,45 @@ finish:
  sceKernelExitDeleteThread(0);
  return 0;
 }
+/* Check for an exact URL match, including CDN query tokens. A stale or
+ * incomplete cache entry must never replace a foreground download. */
+static int copy_prefetched_segment(void)
+{
+ SceUID src=sceIoOpen(PREFETCH_PATH,SCE_O_RDONLY,0);
+ if(src<0)return -1;
+ SceOff size=sceIoLseek(src,0,SCE_SEEK_END);
+ if(size<=0 || size>MAX_BYTES || size%188!=0 ||
+    sceIoLseek(src,0,SCE_SEEK_SET)<0) {
+  sceIoClose(src);return -1;
+ }
+ SceUID dst=sceIoOpen(CACHE_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
+ if(dst<0){sceIoClose(src);return -1;}
+ unsigned char chunk[188*32];
+ SceOff copied=0;
+ int ok=1;
+ while(copied<size) {
+  unsigned amount=(unsigned)((size-copied)>(SceOff)sizeof(chunk)?sizeof(chunk):size-copied);
+  int got=sceIoRead(src,chunk,amount);
+  if(got<=0 || sceIoWrite(dst,chunk,(unsigned)got)!=got){ok=0;break;}
+  copied+=got;
+ }
+ sceIoClose(src);sceIoClose(dst);
+ if(!ok || copied!=size){sceIoRemove(CACHE_PATH);return -1;}
+ return 0;
+}
 int iptvita_network_start(const char *url)
 {
  if(state==1 || !url)return -1;
+ if(prefetch_state==2 && strcmp(url,prefetch_url)==0) {
+  if(copy_prefetched_segment()==0) {
+   prefetch_state=0;
+   prefetch_url[0]=0;
+   ++prefetch_hits;
+   state=2;curl_error=0;http_status=200;
+   return 0;
+  }
+  prefetch_state=0;
+ }
  size_t n=strlen(url);
  if(n<8 || n>=sizeof(url_copy) ||
    (strncmp(url,"https://",8)!=0 && strncmp(url,"http://",7)!=0))return -1;
@@ -183,3 +226,116 @@ void iptvita_network_reset(void) {if(state!=1)state=0;}
 
 int iptvita_network_error_code(void) {return curl_error;}
 int iptvita_network_http_status(void) {return http_status;}
+
+/* Speculative one-segment cache: unlike the foreground downloader, this
+ * worker always writes PREFETCH_PATH. It uses a bounded response and verifies
+ * the TS packet layout before publishing the slot as ready. */
+static int prefetch_worker(SceSize args,void *argp)
+{
+ (void)args;(void)argp;
+ unsigned epoch=prefetch_generation;
+ char url[8192];
+ snprintf(url,sizeof(url),"%s",prefetch_url);
+ int ok=0;
+ sceIoMkdir("ux0:data/IPTVita",0777);
+ if(strncmp(url,"https://",8)==0) {
+  SceUID cf=sceIoOpen(PACKAGED_CA_PATH,SCE_O_RDONLY,0);
+  if(cf>=0) {
+   SceOff len=sceIoLseek(cf,0,SCE_SEEK_END);
+   if(len>0 && len<=1024*1024 && sceIoLseek(cf,0,SCE_SEEK_SET)>=0) {
+    unsigned char *cert=(unsigned char*)malloc((size_t)len+1);
+    unsigned char *body=(unsigned char*)malloc(MAX_BYTES+1);
+    if(cert && body && sceIoRead(cf,cert,(unsigned)len)==len) {
+     cert[len]=0;
+     int http=0;
+     int n=iptvita_tls_get(url,cert,(size_t)len+1,body,MAX_BYTES,&http);
+     if(n>0 && n%188==0 && body[0]==0x47 && http==200) {
+      SceUID fd=sceIoOpen(PREFETCH_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
+      if(fd>=0) {
+       ok=sceIoWrite(fd,body,(unsigned)n)==n;
+       sceIoClose(fd);
+      }
+     }
+    }
+    free(cert);free(body);
+   }
+   sceIoClose(cf);
+  }
+ }else if(strncmp(url,"http://",7)==0 && prepare_ca_bundle()==0) {
+  SceUID fd=sceIoOpen(PREFETCH_PATH,SCE_O_WRONLY|SCE_O_CREAT|SCE_O_TRUNC,0666);
+  if(fd>=0) {
+   CURL *curl=curl_easy_init();
+   if(curl) {
+    Download d={fd,0,0};
+    curl_easy_setopt(curl,CURLOPT_URL,url);
+    curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,1L);
+    curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
+    curl_easy_setopt(curl,CURLOPT_CONNECTTIMEOUT,12L);
+    curl_easy_setopt(curl,CURLOPT_TIMEOUT,35L);
+    curl_easy_setopt(curl,CURLOPT_USERAGENT,"IPTVita/0.6.0");
+    curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,write_file);
+    curl_easy_setopt(curl,CURLOPT_WRITEDATA,&d);
+    curl_easy_setopt(curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTP|CURLPROTO_HTTPS);
+    curl_easy_setopt(curl,CURLOPT_REDIR_PROTOCOLS,CURLPROTO_HTTP|CURLPROTO_HTTPS);
+    curl_easy_setopt(curl,CURLOPT_SSL_VERIFYPEER,1L);
+    curl_easy_setopt(curl,CURLOPT_SSL_VERIFYHOST,2L);
+#if LIBCURL_VERSION_NUM >= 0x074D00
+    curl_easy_setopt(curl,CURLOPT_CAINFO_BLOB,&ca_blob);
+#endif
+    CURLcode rc=curl_easy_perform(curl);
+    long status=0;
+    curl_easy_getinfo(curl,CURLINFO_RESPONSE_CODE,&status);
+    ok=rc==CURLE_OK && status>=200 && status<300 && !d.failed &&
+       d.total>0 && d.total%188==0;
+    curl_easy_cleanup(curl);
+   }
+   sceIoClose(fd);
+   if(ok) {
+    SceUID verify=sceIoOpen(PREFETCH_PATH,SCE_O_RDONLY,0);
+    unsigned char b=0;
+    ok=verify>=0 && sceIoRead(verify,&b,1)==1 && b==0x47;
+    if(verify>=0)sceIoClose(verify);
+   }
+  }
+ }
+ if(!ok || epoch!=prefetch_generation) {
+  sceIoRemove(PREFETCH_PATH);
+  prefetch_state=0;
+ }else prefetch_state=2;
+ sceKernelExitDeleteThread(0);
+ return 0;
+}
+int iptvita_network_prefetch(const char *url)
+{
+ if(!url || (!strstr(url,"http://") && !strstr(url,"https://")))return -1;
+ size_t n=strlen(url);
+ if(n<8 || n>=sizeof(prefetch_url) || prefetch_state==1)return -1;
+ if(prefetch_state==2 && strcmp(prefetch_url,url)==0)return 0;
+ prefetch_state=0;
+ sceIoRemove(PREFETCH_PATH);
+ memcpy(prefetch_url,url,n+1);
+ ++prefetch_generation;
+ prefetch_state=1;
+ SceUID thread=sceKernelCreateThread("iptvita_prefetch",prefetch_worker,
+                                    0x10000100,128*1024,0,0,NULL);
+ if(thread<0){prefetch_state=0;return -1;}
+ if(sceKernelStartThread(thread,0,NULL)<0) {
+  sceKernelDeleteThread(thread);
+  prefetch_state=0;return -1;
+ }
+ return 0;
+}
+int iptvita_network_prefetch_ready(const char *url)
+{
+ return url && prefetch_state==2 && strcmp(prefetch_url,url)==0;
+}
+void iptvita_network_prefetch_clear(void)
+{
+ ++prefetch_generation;
+ if(prefetch_state!=1) {
+  prefetch_state=0;
+  prefetch_url[0]=0;
+  sceIoRemove(PREFETCH_PATH);
+ }
+}
+unsigned iptvita_network_prefetch_hits(void){return prefetch_hits;}
