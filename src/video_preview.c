@@ -3,6 +3,7 @@
 #include "h264_sps.h"
 #include <vita2d.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 #include "h264_au.h"
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,9 @@ static int have_newest_pts;
 typedef struct {unsigned char *data;size_t size;uint64_t pts;int has_pts,key;} EncodedFrame;
 static EncodedFrame frames[FRAME_QUEUE];
 static unsigned head,tail,count;
+static SceUID queue_mutex=-1;
+static void queue_lock(void){if(queue_mutex>=0)sceKernelLockMutex(queue_mutex,1,NULL);}
+static void queue_unlock(void){if(queue_mutex>=0)sceKernelUnlockMutex(queue_mutex,1);}
 static size_t total_bytes;
 static unsigned long long due_at;
 static int playback_primed;
@@ -36,11 +40,14 @@ static unsigned long long clock_us(void){return (unsigned long long)sceKernelGet
 
 void iptvita_preview_reset(void)
 {
+ if(queue_mutex<0)queue_mutex=sceKernelCreateMutex("iptvita_video_queue",0,0,NULL);
+ queue_lock();
  while(count) {
   free(frames[head].data);
   head=(head+1)%FRAME_QUEUE;count--;
  }
  head=tail=0;total_bytes=0;due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
+ queue_unlock();
  newest_pts=0;have_newest_pts=0;
  if(open)iptvita_avc_close(&dec);
  open=0;
@@ -133,12 +140,14 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
     * Keep the exact SDK error visible until the channel is reopened. */
    decoder_fatal=1;
    st.fatal=1;
+   queue_lock();
    while(count) {
     free(frames[head].data);
     head=(head+1)%FRAME_QUEUE;
     count--;
    }
    total_bytes=0;tail=head;st.queued=0;
+   queue_unlock();
   }
   return;
  }
@@ -159,6 +168,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
 {
  if(!data || !size || size>IPTVITA_H264_AU_MAX || decoder_fatal)return;
+ queue_lock();
  /* Video decoder accepts B-frames out of PTS order (usually a few hundred
   * milliseconds), but a whole fragment replaying seconds into the past
   * must not be presented as live content. Reset only at a keyframe across
@@ -171,6 +181,7 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
     previous_pts_valid=0;
    }else if(behind>90000ULL) {
     st.dropped++;
+    queue_unlock();
     return;
    }
   }
@@ -178,9 +189,9 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
   have_newest_pts=1;
  }
  if(key)st.keyframes++;
- if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;return;}
+ if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;queue_unlock();return;}
  unsigned char *copy=(unsigned char*)malloc(size);
- if(!copy)return;
+ if(!copy){queue_unlock();return;}
  memcpy(copy,data,size);
  frames[tail].data=copy;
  frames[tail].size=size;
@@ -192,30 +203,34 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  total_bytes+=size;
  st.queued=count;
  st.buffer_percent=count>=30?100:(int)(count*100u/30u);
+ queue_unlock();
 }
 void iptvita_preview_tick(void)
 {
+ queue_lock();
  if(!count) {
   /* Exhausted buffer: don't decode the next isolated frame immediately. */
   playback_primed=0;
   due_at=0;
   previous_pts_valid=0;
+  queue_unlock();
   return;
  }
  if(!playback_primed) {
   if(count<(st.decoded?REBUFFER_FRAMES:START_FRAMES) &&
-     total_bytes<QUEUE_BYTES/2) return;
+     total_bytes<QUEUE_BYTES/2) {queue_unlock();return;}
   playback_primed=1;
   due_at=0;
   previous_pts_valid=0;
  }
  unsigned long long now=clock_us();
- if(due_at && now<due_at)return;
+ if(due_at && now<due_at){queue_unlock();return;}
  EncodedFrame item=frames[head];
  head=(head+1)%FRAME_QUEUE;count--;
  total_bytes-=item.size;
  st.queued=count;
  st.buffer_percent=count>=30?100:(int)(count*100u/30u);
+ queue_unlock();
  decode_frame(item.data,item.size,item.pts,item.has_pts,item.key);
  free(item.data);
  unsigned long long duration=33333ULL;
