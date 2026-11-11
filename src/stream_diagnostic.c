@@ -104,6 +104,9 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
 {
  finish_segment_worker();
  if(!ui || !url || !url[0])return -1;
+ iptvita_network_prefetch_clear();
+ ui->stream_prefetch_next_url[0]=0;
+ ui->stream_prefetch_next_sequence=0;
  if((ui->stream_stage>=1 && ui->stream_stage<=3) || ui->stream_stage==5 || ui->stream_stage==6)return -2;
  close_pipeline();
  ui->stream_paused=0;ui->stream_media_url[0]=0;
@@ -171,6 +174,16 @@ static void inspect_playlist(IptvitaUi *ui)
  snprintf(next,sizeof(next),"%s",info->first_media);
  int master=info->is_master;
  int cipher=info->cipher_method;
+ /* Prefetch the immediately following video segment, never a master
+  * playlist, alternate-audio segment or an encrypted chunk. */
+ char successor[IPTVITA_HLS_URL_MAX];
+ successor[0]=0;
+ unsigned long long successor_sequence=0;
+ if(!master && !alternate && cipher==0 && info->next_cipher_method==0 &&
+    info->next_media[0]) {
+  snprintf(successor,sizeof(successor),"%s",info->next_media);
+  successor_sequence=info->next_sequence;
+ }
  if(master && info->audio_media[0]) {
   snprintf(ui->stream_alt_audio_list_url,sizeof(ui->stream_alt_audio_list_url),
            "%s",info->audio_media);
@@ -188,6 +201,15 @@ static void inspect_playlist(IptvitaUi *ui)
   snprintf(ui->stream_key_url,sizeof(ui->stream_key_url),"%s",info->key_url);
  }
  free(info);
+ if(!alternate && !master) {
+  ui->stream_prefetch_next_url[0]=0;
+  ui->stream_prefetch_next_sequence=0;
+  if(successor[0]) {
+   snprintf(ui->stream_prefetch_next_url,
+            sizeof(ui->stream_prefetch_next_url),"%s",successor);
+   ui->stream_prefetch_next_sequence=successor_sequence;
+  }
+ }
  if(!next[0]) {
   if(alternate) {
    ui->stream_stage=5;ui->stream_refresh_at=now_us()+350000ULL;
@@ -236,6 +258,8 @@ static void inspect_playlist(IptvitaUi *ui)
   else rc=schedule(ui,ui->stream_key_url,6);
  }else rc=schedule(ui,next,stage);
  if(rc<0)fail(ui,rc);
+ else if(!master && !alternate && successor[0] && cipher==0)
+  iptvita_network_prefetch(successor);
 }
 static void inspect_key(IptvitaUi *ui)
 {
@@ -398,6 +422,20 @@ void iptvita_stream_poll(IptvitaUi *ui)
    iptvita_audio_pause(1);
    return;
   }
+  /* If the successor finished preloading, bypass one manifest roundtrip.
+   * It is safe only for consecutive clear TS segments from the same list.
+   * The foreground network API copies the finished file before the demux
+   * worker opens online.m3u. */
+  if(!ui->stream_paused && !ui->stream_alt_audio_pending &&
+     ui->stream_has_sequence && ui->stream_prefetch_next_url[0] &&
+     ui->stream_prefetch_next_sequence==ui->stream_last_sequence+1ULL &&
+     iptvita_network_prefetch_ready(ui->stream_prefetch_next_url)) {
+   ui->stream_selected_sequence=ui->stream_prefetch_next_sequence;
+   int pre=schedule(ui,ui->stream_prefetch_next_url,3);
+   ui->stream_prefetch_next_url[0]=0;
+   if(pre<0)fail(ui,pre);
+   return;
+  }
   if(!ui->stream_paused && now_us()>=ui->stream_refresh_at &&
      (ui->stream_media_url[0] || ui->stream_source_url[0])) {
    int rc;
@@ -463,6 +501,7 @@ void iptvita_stream_poll(IptvitaUi *ui)
 void iptvita_stream_stop(IptvitaUi *ui)
 {
  finish_segment_worker();
+ iptvita_network_prefetch_clear();
  close_pipeline();
  iptvita_audio_stop();
  iptvita_preview_reset();
@@ -471,6 +510,8 @@ void iptvita_stream_stop(IptvitaUi *ui)
   ui->stream_paused=0;
   ui->stream_media_url[0]=0;
   ui->stream_last_segment[0]=0;
+  ui->stream_prefetch_next_url[0]=0;
+  ui->stream_prefetch_next_sequence=0;
   ui->stream_key_valid=0;
   memset(ui->stream_key,0,sizeof(ui->stream_key));
   ui->stream_cached_key_url[0]=0;
