@@ -501,8 +501,8 @@ void iptvita_ui_render(const IptvitaUi *ui)
             /* H264 diagnostics: count B pictures and reordered output PTS. */
             if(v.b_frames || v.reordered_pts || v.late_pictures) {
                 char extra[112];
-                snprintf(extra,sizeof(extra),"B %u / PTS REORD %u / ATRASADOS %u",
-                         v.b_frames,v.reordered_pts,v.late_pictures);
+                snprintf(extra,sizeof(extra),"B %u / PTS HW %u EST %u / ATR %u",
+                         v.b_frames,v.hardware_pts,v.estimated_pts,v.late_pictures);
                 label(615,444,extra,2,p.accent);
             }
             {
