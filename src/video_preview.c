@@ -331,8 +331,10 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
    display_count++;
    st.ready_pictures=display_count;
    if(display_count>st.peak_ready_pictures)st.peak_ready_pictures=display_count;
-  } else st.dropped++;
- } else st.dropped++;
+  }else {
+   st.decode_error=-36;st.fatal=1;decoder_fatal=1;
+  }
+ }else st.dropped++;
  display_unlock();
  st.decoder_phase=3;
 }
@@ -434,6 +436,7 @@ void iptvita_preview_tick(void)
   if(texture){vita2d_wait_rendering_done();vita2d_free_texture(texture);texture=NULL;}
   texture=vita2d_create_empty_texture((unsigned)st.width,(unsigned)st.height);
   if(texture){texture_width=st.width;texture_height=st.height;}
+  else {st.decode_error=-37;st.fatal=1;return;}
  }
  display_lock();
  if(display_count && texture) {
