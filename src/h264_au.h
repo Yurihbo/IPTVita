@@ -11,6 +11,11 @@ typedef struct {
  size_t pending_used,pending_capacity;
  uint64_t pending_pts;
  int pending_has_pts;
+ /* PES timestamp cutover: trailing NAL from the previous PES must retain
+  * its original PTS until its complete Annex-B payload has been consumed. */
+ uint64_t next_pes_pts;
+ size_t next_pes_offset;
+ int next_pes_has_pts,has_pes_cutover;
  int has_vcl,has_idr,has_pts;
  uint64_t pts;
  unsigned units,frames,dropped;

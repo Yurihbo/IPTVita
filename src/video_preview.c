@@ -204,6 +204,7 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   open=1;
  }
  st.submitted++;
+ st.decode_calls++;
  if(has_pts)pts_push(pts);
  uint64_t actual_pts=0;
  int actual_has_pts=0;
@@ -372,14 +373,21 @@ void iptvita_preview_tick(void)
   * Display order follows decoder output, rather than input AU order. */
  unsigned long long now=clock_us();
  if(output_ready) {
-  if(presentation_due(now)) {
-   if(output_has_pts && last_shown_valid &&
-      pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
-    /* Skip an obsolete presentation, never skip its decode operation. */
-    st.dropped++;st.late_pictures++;output_ready=0;
-  }else present_picture();
+  /* A picture must not block the next AU after it has been displayed.
+   * Previously every successful decode was followed by an entire main-loop
+   * iteration that did nothing but present it: on a ~30 Hz render loop this
+   * capped decoding near 15 fps even when audio and network were healthy. */
+  if(!presentation_due(now)) {
+   st.picture_waits++;
+   return;
   }
-  return;
+  if(output_has_pts && last_shown_valid &&
+     pts_difference(output_pts,last_shown_pts)<-90000LL/2) {
+   st.dropped++;st.late_pictures++;output_ready=0;
+  }else present_picture();
+  /* Continue immediately into the next compressed AU, with the previous
+   * picture already copied to the vita2d texture. The decoder's next RGBA
+   * output cannot overwrite a picture still waiting for presentation. */
  }
  queue_lock();
  now=clock_us();
