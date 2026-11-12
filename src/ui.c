@@ -494,10 +494,10 @@ void iptvita_ui_render(const IptvitaUi *ui)
             snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
             label(25,463,details,2,p.white);
             IptvitaPreviewStats v=iptvita_preview_stats();
-            snprintf(details,sizeof(details),"AVC TH %s / ES %u/%u / RGBA %u/%u / RAM %uKB / REBUF %u",
-                     v.worker_running?"ON":"OFF",v.queued,v.buffer_target,
-                     v.decoded_queued,v.decoded_capacity,
-                     v.queued_bytes/1024,v.buffer_events);
+            snprintf(details,sizeof(details),"AVC TH %s / ES %u/%u / %u/%u MiB / RGBA %u/%u",
+                     v.worker_running?"ON":"OFF",v.queued,v.queue_capacity,
+                     v.queued_bytes/(1024u*1024u),v.queue_limit_mib,
+                     v.decoded_queued,v.decoded_capacity);
             label(25,485,details,2,p.muted);
             /* H264 diagnostics: count B pictures and reordered output PTS. */
             {
