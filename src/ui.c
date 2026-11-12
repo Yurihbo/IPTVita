@@ -500,10 +500,10 @@ void iptvita_ui_render(const IptvitaUi *ui)
                      v.queued_bytes/1024,v.buffer_events);
             label(25,485,details,2,p.muted);
             /* H264 diagnostics: count B pictures and reordered output PTS. */
-            if(v.b_frames || v.reordered_pts || v.late_pictures) {
+            {
                 char extra[112];
-                snprintf(extra,sizeof(extra),"H264 IN %u OUT %u / B %u / PTS HW %u EST %u",
-                         v.decode_calls,v.decoded,v.b_frames,
+                snprintf(extra,sizeof(extra),"FPS DEC %u EXIB %u / B %u / PTS HW %u EST %u",
+                         v.decode_fps,v.video_fps,v.b_frames,
                          v.hardware_pts,v.estimated_pts);
                 label(615,444,extra,2,p.accent);
             }

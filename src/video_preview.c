@@ -32,6 +32,8 @@ static volatile int decoder_stop;
 static volatile int decoder_paused;
 static int worker_enabled;
 static unsigned long long last_decoder_us;
+static unsigned long long fps_window_us;
+static unsigned fps_decode_base,fps_present_base;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
@@ -193,6 +195,7 @@ void iptvita_preview_reset(void)
  st.buffering=1;
  st.buffer_target=START_FRAMES;
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
+ fps_window_us=0;fps_decode_base=fps_present_base=0;
 }
 int iptvita_preview_start(void)
 {
@@ -545,23 +548,38 @@ void iptvita_preview_tick(void)
  if(!texture)return;
  queue_lock();
  unsigned long long now=clock_us();
- if(picture_count && presentation_due(now)) {
+ /* Recover an A/V backlog in a single UI tick. Only discard already
+  * decoded pictures; never drop compressed P/B reference AUs. When all
+  * pictures are late, present the latest rather than freezing forever. */
+ for(unsigned tries=0;tries<DISPLAY_SLOTS && picture_count;tries++) {
+  if(!presentation_due(now)) {st.picture_waits++;break;}
   DisplayPicture *p=&pictures[picture_head];
   uint64_t audio_pts=0;
-  int too_old=p->has_pts && iptvita_audio_clock(&audio_pts) &&
-              pts_difference(p->pts,audio_pts)<-18000LL;
+  int has_audio=p->has_pts && iptvita_audio_clock(&audio_pts);
+  int too_old=has_audio && pts_difference(p->pts,audio_pts)<-18000LL;
   int backwards=p->has_pts && last_shown_valid &&
                 pts_difference(p->pts,last_shown_pts)<-4500LL;
-  if(too_old || backwards) {
+  if(backwards || (too_old && picture_count>1)) {
    st.dropped++;
    st.late_pictures++;
    retire_picture();
-  } else {
-   int no_pts=!p->has_pts;
-   present_picture();
-   if(no_pts)due_at=now+33333ULL;
+   continue;
   }
- }else if(picture_count)st.picture_waits++;
+  int no_pts=!p->has_pts;
+  present_picture();
+  if(no_pts)due_at=now+33333ULL;
+  break;
+ }
+ /* Measure real pictures presented and codec calls, not the screen capture
+  * frame rate. A low OUT with high IN means post-decode timing pressure. */
+ if(!fps_window_us){fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;}
+ else if(now>=fps_window_us && now-fps_window_us>=1000000ULL) {
+  unsigned long long delta=now-fps_window_us;
+  st.decode_fps=(unsigned)(((unsigned long long)(st.decode_calls-fps_decode_base)*1000000ULL)/delta);
+  st.video_fps=(unsigned)(((unsigned long long)(st.decoded-fps_present_base)*1000000ULL)/delta);
+  st.video_fps_samples++;
+  fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
+ }
  queue_unlock();
 }
 void iptvita_preview_pause(int on)
