@@ -35,6 +35,7 @@ static int worker_enabled;
 static unsigned long long last_decoder_us;
 static unsigned long long fps_window_us;
 static unsigned fps_decode_base,fps_present_base;
+static unsigned fps_produced_base,fps_empty_base,fps_late_base;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
@@ -267,6 +268,7 @@ void iptvita_preview_reset(void)
  queue_publish_limits();
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
  fps_window_us=0;fps_decode_base=fps_present_base=0;
+ fps_produced_base=fps_empty_base=fps_late_base=0;
 }
 int iptvita_preview_start(void)
 {
@@ -406,7 +408,8 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  wait_for_idr=0;
  st.waiting_for_idr=0;
  st.decode_error=0;
- if(rc==0)return;
+ if(rc==0){st.pictures_empty++;return;}
+ st.pictures_produced++;
  /* AVC may return the output for an earlier AU. The hardware produces
   * decoded pictures in its display sequence; the caller only schedules
   * presentation after the output exists. */
@@ -648,13 +651,24 @@ void iptvita_preview_tick(void)
  }
  /* Measure real pictures presented and codec calls, not the screen capture
   * frame rate. A low OUT with high IN means post-decode timing pressure. */
- if(!fps_window_us){fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;}
+ if(!fps_window_us){
+  fps_window_us=now;
+  fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
+  fps_produced_base=st.pictures_produced;
+  fps_empty_base=st.pictures_empty;
+  fps_late_base=st.late_pictures;
+ }
  else if(now>=fps_window_us && now-fps_window_us>=1000000ULL) {
   unsigned long long delta=now-fps_window_us;
   st.decode_fps=(unsigned)(((unsigned long long)(st.decode_calls-fps_decode_base)*1000000ULL)/delta);
   st.video_fps=(unsigned)(((unsigned long long)(st.decoded-fps_present_base)*1000000ULL)/delta);
+  st.produced_fps=(unsigned)(((unsigned long long)(st.pictures_produced-fps_produced_base)*1000000ULL)/delta);
+  st.empty_fps=(unsigned)(((unsigned long long)(st.pictures_empty-fps_empty_base)*1000000ULL)/delta);
+  st.late_fps=(unsigned)(((unsigned long long)(st.late_pictures-fps_late_base)*1000000ULL)/delta);
   st.video_fps_samples++;
   fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
+  fps_produced_base=st.pictures_produced;fps_empty_base=st.pictures_empty;
+  fps_late_base=st.late_pictures;
  }
  queue_unlock();
 }
