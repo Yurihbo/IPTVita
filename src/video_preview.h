@@ -10,6 +10,8 @@ typedef struct {
  unsigned hardware_pts,estimated_pts;
  unsigned decode_calls,picture_waits;
  unsigned queued_bytes,peak_queued_bytes;
+ unsigned queue_capacity,queue_limit_mib,queue_expanded;
+ unsigned queue_expansions,queue_growth_denied;
  unsigned decoded_queued,decoded_capacity;
  unsigned video_fps,decode_fps,video_fps_samples;
  int worker_running;
