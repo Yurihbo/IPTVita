@@ -4,6 +4,7 @@
 #include <vita2d.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/kernel/sysmem.h>
 #include "h264_au.h"
 #include "aac_audio.h"
 #include <stdlib.h>
@@ -39,8 +40,16 @@ static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
 static uint64_t newest_pts;
 static int have_newest_pts;
-#define FRAME_QUEUE 240
-#define QUEUE_BYTES (24u*1024u*1024u)
+/* Capacity is an upper bound, not an amount reserved upfront.
+ * Start with a 24-MiB / 1800-AU budget and expand only under sustained
+ * pressure with sufficient free application memory. */
+#define FRAME_QUEUE 3600
+#define QUEUE_BASE_COUNT 1800u
+#define QUEUE_BASE_BYTES (24u*1024u*1024u)
+#define QUEUE_BIG_COUNT 3600u
+#define QUEUE_BIG_BYTES (40u*1024u*1024u)
+#define QUEUE_GROW_HEADROOM (32u*1024u*1024u)
+#define QUEUE_SHRINK_US 45000000ULL
 /* Short compressed-frame cache absorbs download gaps without requiring
  * a large decoded frame pool on the Vita. Re-prime after an underrun. */
 #define START_FRAMES 24
@@ -55,6 +64,10 @@ static SceUID queue_mutex=-1;
 static void queue_lock(void){if(queue_mutex>=0)sceKernelLockMutex(queue_mutex,1,NULL);}
 static void queue_unlock(void){if(queue_mutex>=0)sceKernelUnlockMutex(queue_mutex,1);}
 static size_t total_bytes;
+static unsigned queue_count_limit=QUEUE_BASE_COUNT;
+static size_t queue_bytes_limit=QUEUE_BASE_BYTES;
+static unsigned long long queue_big_since;
+static unsigned long long queue_check_at;
 static unsigned long long due_at;
 static int playback_primed;
 static unsigned rebuffer_target=REBUFFER_MIN;
@@ -77,6 +90,60 @@ static unsigned pending_count;
 static uint64_t last_shown_pts;
 static int last_shown_valid;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
+/* sceKernelGetFreeMemorySize reports available system pool budgets. This is
+ * a conservative admission check, not a reservation; every AU is still
+ * allocated individually and malloc failure is handled without crashing. */
+static int queue_memory_allows_growth(void)
+{
+ SceKernelFreeMemorySizeInfo free_mem;
+ memset(&free_mem,0,sizeof free_mem);
+ free_mem.size=sizeof free_mem;
+ if(sceKernelGetFreeMemorySize(&free_mem)<0)return 0;
+ /* Increasing the ceiling by 16 MiB must still leave 32 MiB for decoding,
+  * audio, graphics and network. */
+ return (uint64_t)free_mem.size_user >=
+   (uint64_t)(QUEUE_BIG_BYTES-QUEUE_BASE_BYTES)+QUEUE_GROW_HEADROOM;
+}
+/* These helpers run with queue_mutex held. */
+static void queue_publish_limits(void)
+{
+ st.queue_capacity=queue_count_limit;
+ st.queue_limit_mib=(unsigned)(queue_bytes_limit/(1024u*1024u));
+ st.queue_expanded=queue_count_limit>QUEUE_BASE_COUNT;
+}
+static int queue_maybe_expand_locked(size_t incoming)
+{
+ unsigned long long now=clock_us();
+ if(queue_count_limit==QUEUE_BIG_COUNT)return 1;
+ int pressure=count+1>=queue_count_limit*3u/4u ||
+              total_bytes+incoming>=queue_bytes_limit*3u/4u;
+ if(!pressure)return 0;
+ if(queue_check_at && now<queue_check_at)return 0;
+ queue_check_at=now+5000000ULL;
+ if(!queue_memory_allows_growth()){
+  st.queue_growth_denied++;
+  return 0;
+ }
+ queue_count_limit=QUEUE_BIG_COUNT;
+ queue_bytes_limit=QUEUE_BIG_BYTES;
+ queue_big_since=now;
+ st.queue_expansions++;
+ queue_publish_limits();
+ return 1;
+}
+static void queue_maybe_shrink_locked(void)
+{
+ if(queue_count_limit!=QUEUE_BIG_COUNT)return;
+ unsigned long long now=clock_us();
+ /* Shrink the limit, not any queued data. Let pre-existing video drain. */
+ if(now>=queue_big_since && now-queue_big_since>=QUEUE_SHRINK_US &&
+    count<QUEUE_BASE_COUNT/2 && total_bytes<QUEUE_BASE_BYTES/2) {
+  queue_count_limit=QUEUE_BASE_COUNT;
+  queue_bytes_limit=QUEUE_BASE_BYTES;
+  queue_check_at=now+5000000ULL;
+  queue_publish_limits();
+ }
+}
 static int64_t pts_difference(uint64_t a,uint64_t b)
 {
  uint64_t d=(a-b)&((1ULL<<33)-1);
@@ -173,7 +240,10 @@ void iptvita_preview_reset(void)
   free(frames[head].data);
   head=(head+1)%FRAME_QUEUE;count--;
  }
- head=tail=0;total_bytes=0;due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
+ head=tail=0;total_bytes=0;
+ queue_count_limit=QUEUE_BASE_COUNT;queue_bytes_limit=QUEUE_BASE_BYTES;
+ queue_big_since=queue_check_at=0;
+ due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
  video_clock_valid=audio_master_active=0;video_base_pts=video_base_us=0;
  rebuffer_target=REBUFFER_MIN;last_underrun_us=last_target_decay_us=0;
  saw_picture=0;
@@ -194,6 +264,7 @@ void iptvita_preview_reset(void)
  st.waiting_for_idr=1;
  st.buffering=1;
  st.buffer_target=START_FRAMES;
+ queue_publish_limits();
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
  fps_window_us=0;fps_decode_base=fps_present_base=0;
 }
@@ -375,7 +446,11 @@ void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,i
  }
  if(key)st.keyframes++;
  if(is_b_picture(data,size))st.b_frames++;
- if(count==FRAME_QUEUE || size>QUEUE_BYTES-total_bytes){st.dropped++;queue_unlock();return;}
+ /* Growth is demand-driven; never allocate a fixed 40 MiB slab. */
+ queue_maybe_expand_locked(size);
+ if(count>=queue_count_limit || size>queue_bytes_limit-total_bytes){
+  st.dropped++;queue_unlock();return;
+ }
  unsigned char *copy=(unsigned char*)malloc(size);
  if(!copy){queue_unlock();return;}
  memcpy(copy,data,size);
@@ -485,7 +560,7 @@ static int avc_worker(SceSize args,void *argp)
      st.buffering=1;
      st.buffer_target=goal;
      st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
-     if(count>=goal || total_bytes>=QUEUE_BYTES/2) {
+     if(count>=goal || total_bytes>=queue_bytes_limit/2) {
       playback_primed=1;
       st.buffering=0;
       previous_pts_valid=0;
@@ -503,6 +578,7 @@ static int avc_worker(SceSize args,void *argp)
      item=frames[head];
      head=(head+1)%FRAME_QUEUE;count--;
      total_bytes-=item.size;
+     queue_maybe_shrink_locked();
      st.queued=count;
      st.queued_bytes=(unsigned)total_bytes;
      st.buffer_target=rebuffer_target;
