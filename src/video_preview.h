@@ -11,6 +11,7 @@ typedef struct {
  unsigned decode_calls,picture_waits;
  unsigned queued_bytes,peak_queued_bytes;
  unsigned decoded_queued,decoded_capacity;
+ unsigned video_fps,decode_fps,video_fps_samples;
  int worker_running;
  unsigned long long last_output_us;
  int buffer_percent;
@@ -25,7 +26,8 @@ int iptvita_preview_start(void);
 void iptvita_preview_pause(int on);
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key);
 IptvitaPreviewStats iptvita_preview_stats(void);
-/* Consume at most one compressed access unit per video tick. */
+/* UI consumes at most one ready picture per screen tick.
+ * The independent H264 worker consumes compressed access units. */
 void iptvita_preview_tick(void);
 void iptvita_preview_resume(void);
 void iptvita_preview_draw(int x,int y,int width,int height,int fill);
