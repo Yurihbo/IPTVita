@@ -93,7 +93,11 @@ static int last_shown_valid;
  * Recover lateness by dropping stale PRESENTATIONS, never by running
  * surviving animation frames at the Vita's ~60-Hz render cadence. */
 static unsigned long long last_picture_us;
+static unsigned long long next_picture_due_us;
+static unsigned long long last_catchup_skip_us;
 static unsigned frame_interval_us=33333u;
+static uint64_t last_decoded_picture_pts;
+static int last_decoded_picture_valid;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
 /* sceKernelGetFreeMemorySize reports available system pool budgets. This is
  * a conservative admission check, not a reservation; every AU is still
@@ -226,6 +230,10 @@ static void clear_presentation(void)
  last_shown_valid=0;
  last_shown_pts=0;
  last_picture_us=0;
+ next_picture_due_us=0;
+ last_catchup_skip_us=0;
+ last_decoded_picture_pts=0;
+ last_decoded_picture_valid=0;
  frame_interval_us=33333u;
  st.cadence_ms=33;
  st.decoded_queued=0;
@@ -427,6 +435,27 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  }else if(fallback_has_pts)st.estimated_pts++;
  picture->ready_at=clock_us();
  queue_lock();
+ /* Learn true source cadence from successive AVCDEC outputs, NOT
+  * pictures the UI happened to display after dropping a backlog.
+  * A single scene with bad/duplicate PTS cannot force a sudden speedup. */
+ if(picture->has_pts) {
+  if(last_decoded_picture_valid) {
+   int64_t ticks=pts_difference(picture->pts,last_decoded_picture_pts);
+   if(ticks>=1500 && ticks<=5400) {
+    unsigned sample=(unsigned)(ticks*1000000LL/90000LL);
+    if(sample>=16000u && sample<=60000u) {
+     frame_interval_us=(frame_interval_us*3u+sample+2u)/4u;
+     st.cadence_ms=(frame_interval_us+500u)/1000u;
+    }
+   }else if(ticks< -90000LL || ticks>90000LL) {
+    last_decoded_picture_valid=0;
+    next_picture_due_us=0;
+    st.pts_discontinuities++;
+   }
+  }
+  last_decoded_picture_pts=picture->pts;
+  last_decoded_picture_valid=1;
+ }
  picture_tail=(picture_tail+1)%picture_capacity;
  picture_count++;
  st.decoded_queued=picture_count;
@@ -502,6 +531,14 @@ static void present_picture(void)
  saw_picture=1;
  st.last_output_us=clock_us();
  last_picture_us=st.last_output_us;
+ /* Phase-locked deadline: preserve fractional 24/25/30-fps timing across
+  * a 60-Hz render loop. Do NOT restart a full frame interval after each
+  * slightly late VBlank, which was quantizing 24fps to ~20fps. */
+ if(!next_picture_due_us ||
+    st.last_output_us>next_picture_due_us+2ULL*frame_interval_us)
+  next_picture_due_us=st.last_output_us+frame_interval_us;
+ else
+  next_picture_due_us+=frame_interval_us;
  if(picture->has_pts){last_shown_pts=picture->pts;last_shown_valid=1;}
  retire_picture();
 }
@@ -513,28 +550,19 @@ static void present_picture(void)
  * intentional long frame, so preserve the most recent learned cadence. */
 static int cadence_due(const DisplayPicture *picture,unsigned long long now)
 {
- if(!last_picture_us)return 1;
- unsigned interval=frame_interval_us;
- if(picture->has_pts && last_shown_valid) {
-  int64_t ticks=pts_difference(picture->pts,last_shown_pts);
-  if(ticks>=1500 && ticks<=5400) {
-   unsigned measured=(unsigned)((ticks*1000000LL)/90000LL);
-   if(measured>=16000u && measured<=60000u)interval=measured;
-  }
- }
- if(now>=last_picture_us && now-last_picture_us<(unsigned long long)interval) {
+ (void)picture;
+ if(next_picture_due_us && now<next_picture_due_us) {
   st.cadence_waits++;
   return 0;
  }
- frame_interval_us=interval;
- st.cadence_ms=(interval+500u)/1000u;
  return 1;
 }
 static int presentation_due(unsigned long long now)
 {
  if(!picture_count)return 0;
  DisplayPicture *picture=&pictures[picture_head];
- if(!picture->has_pts)return !due_at || now>=due_at;
+ /* The cadence deadline already governs streams without picture PTS. */
+ if(!picture->has_pts)return 1;
  uint64_t audio_pts=0;
  if(iptvita_audio_clock(&audio_pts)) {
   int64_t delta=pts_difference(picture->pts,audio_pts);
@@ -666,19 +694,29 @@ void iptvita_preview_tick(void)
   DisplayPicture *p=&pictures[picture_head];
   uint64_t audio_pts=0;
   int has_audio=p->has_pts && iptvita_audio_clock(&audio_pts);
-  int too_old=has_audio && pts_difference(p->pts,audio_pts)<-18000LL;
+  int64_t av_delta=has_audio?pts_difference(p->pts,audio_pts):0;
+  st.av_delta_ms=has_audio?(int)(av_delta/90):0;
+  /* Only trim meaningful (>500ms) persistent lag when another decoded
+   * image is already available. At most one skip every 120ms prevents
+   * rapid jump-cuts/animation fast-forward across consecutive UI ticks. */
+  int too_old=has_audio && av_delta< -45000LL &&
+              picture_count>1 &&
+              (!last_catchup_skip_us ||
+               now-last_catchup_skip_us>=120000ULL);
   int backwards=p->has_pts && last_shown_valid &&
                 pts_difference(p->pts,last_shown_pts)<-4500LL;
-  if(backwards || (too_old && picture_count>1)) {
+  if(backwards || too_old) {
    st.dropped++;
    st.late_pictures++;
+   if(too_old)last_catchup_skip_us=now;
    retire_picture();
-   continue;
+   /* Do not drop several good pictures during a single screen tick. */
+   break;
   }
   if(!cadence_due(p,now))break;
   int no_pts=!p->has_pts;
   present_picture();
-  if(no_pts)due_at=now+(unsigned long long)frame_interval_us;
+  if(no_pts)due_at=next_picture_due_us;
   break;
  }
  /* Measure real pictures presented and codec calls, not the screen capture
@@ -699,6 +737,8 @@ void iptvita_preview_pause(int on)
  decoder_paused=on?1:0;
  if(!on) {
   last_picture_us=0;
+  next_picture_due_us=0;
+  last_catchup_skip_us=0;
   due_at=0;
   video_clock_valid=audio_master_active=0;
   previous_pts_valid=0;
