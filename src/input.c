@@ -20,6 +20,7 @@ static void open_page(IptvitaUi *ui, int page)
     ui->nav_index=page;
     ui->focus_content=(page==IPTVITA_SOURCES || page==IPTVITA_SETTINGS);
     ui->show_dialog=0;
+    ui->delete_confirm=0;
     ui->browsing=0;
 }
 static char *field(IptvitaUi *ui, size_t *cap)
@@ -89,6 +90,24 @@ static void editor_input(IptvitaUi *ui,unsigned int pressed)
 int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
 {
     if(ui->editing) { editor_input(ui,pressed); return 0; }
+    if(ui->delete_confirm) {
+        /* No destructive action until explicit YES followed by Cross.
+         * Circle always cancels, including after the YES option is selected. */
+        if(pressed&SCE_CTRL_CIRCLE){ui->delete_confirm=0;return 0;}
+        if(pressed&(SCE_CTRL_LEFT|SCE_CTRL_RIGHT|SCE_CTRL_UP|SCE_CTRL_DOWN))
+            ui->delete_yes=!ui->delete_yes;
+        if(pressed&SCE_CTRL_CROSS) {
+            if(ui->delete_yes && ui->delete_index>=0 &&
+               ui->delete_index<(int)ui->sources.count) {
+                iptvita_sources_remove(&ui->sources,(unsigned)ui->delete_index);
+                ui->save_status=iptvita_sources_save(&ui->sources)<0?4:1;
+                if(ui->list_index>=(int)ui->sources.count && ui->list_index>0)
+                    --ui->list_index;
+            }
+            ui->delete_confirm=0;
+        }
+        return 0;
+    }
     if(ui->quit_confirm) {
         if(pressed&SCE_CTRL_CROSS) return 1;
         if(pressed&SCE_CTRL_CIRCLE) ui->quit_confirm=0;
@@ -170,9 +189,9 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         if((pressed&SCE_CTRL_RTRIGGER) && ui->sources.count)
             begin_edit(ui,ui->list_index,0);
         if((pressed&SCE_CTRL_SQUARE) && ui->sources.count) {
-            iptvita_sources_remove(&ui->sources,(unsigned int)ui->list_index);
-            ui->save_status=iptvita_sources_save(&ui->sources)<0?4:1;
-            if(ui->list_index>=(int)ui->sources.count && ui->list_index>0) --ui->list_index;
+            ui->delete_index=ui->list_index;
+            ui->delete_yes=0;
+            ui->delete_confirm=1;
         }
         if(pressed&SCE_CTRL_CIRCLE) ui->list_mode=0;
         return 0;
@@ -211,8 +230,8 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             else ui->save_status=3;
         } else if(ui->page==IPTVITA_SETTINGS) {
             if(ui->settings_index==0) ui->theme=(ui->theme+1)%3;
-            else if(ui->settings_index==2) ui->language=1-ui->language;
-            else ui->show_dialog=1;
+            else if(ui->settings_index==1) ui->hide_control_hints=!ui->hide_control_hints;
+            else ui->language=1-ui->language;
         } else if(ui->page==IPTVITA_HOME) open_page(ui,IPTVITA_SOURCES);
     }
     return 0;
