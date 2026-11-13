@@ -15,6 +15,8 @@ typedef struct {
  unsigned decoded_queued,decoded_capacity;
  unsigned video_fps,decode_fps,video_fps_samples;
  unsigned cadence_ms,cadence_waits;
+ unsigned pts_discontinuities;
+ int av_delta_ms; /* displayed candidate PTS minus audio clock, in ms */
  int worker_running;
  unsigned long long last_output_us;
  int buffer_percent;

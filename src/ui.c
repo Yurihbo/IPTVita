@@ -570,9 +570,9 @@ void iptvita_ui_render(const IptvitaUi *ui)
             /* H264 diagnostics: count B pictures and reordered output PTS. */
             {
                 char extra[112];
-                snprintf(extra,sizeof(extra),"FPS DEC %u EXIB %u / CAD %ums / PTS HW %u EST %u",
+                snprintf(extra,sizeof(extra),"FPS %u/%u CAD %ums AV %+dms",
                          v.decode_fps,v.video_fps,v.cadence_ms,
-                         v.hardware_pts,v.estimated_pts);
+                         v.av_delta_ms);
                 label(615,444,extra,2,p.accent);
             }
             {
