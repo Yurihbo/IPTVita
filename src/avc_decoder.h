@@ -20,11 +20,16 @@ typedef struct {
 /* First native H.264 decoder backend: supports up to 1280x720 using
  * the public SceVideodec API. */
 int iptvita_avc_open(IptvitaAvcDecoder *d,int width,int height,int references);
-/* Decode one Annex-B access unit into an aligned RGBA8888 frame buffer.
- * rgba must hold at least aligned_width * aligned_height * 4 bytes.
- * Returns 1 if a picture was produced, 0 if buffered, negative SDK error. */
+/* Feed one Annex-B H264 access unit and collect up to two decoded pictures
+ * in presentation order. The public Vita AVCDEC may release TWO pictures for
+ * one AU (especially when flushing a reorder queue at IDR). Each rgba[k]
+ * is independent and must fit aligned_width * aligned_height * 4 bytes.
+ * max_pictures must be 1 or 2, and each pointer must be valid.
+ * Returns 0..max_pictures picture outputs, negative on SDK failure.
+ * Picture PTS values belong to the corresponding output, not the input AU. */
 int iptvita_avc_decode(IptvitaAvcDecoder *d,const unsigned char *au,size_t size,
-                       uint64_t pts,int has_pts,void *rgba,size_t rgba_capacity,
-                       uint64_t *picture_pts,int *picture_has_pts);
+                       uint64_t pts,int has_pts,void *rgba[2],size_t rgba_capacity,
+                       unsigned max_pictures,uint64_t picture_pts[2],
+                       int picture_has_pts[2]);
 void iptvita_avc_close(IptvitaAvcDecoder *d);
 #endif

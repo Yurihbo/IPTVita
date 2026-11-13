@@ -358,15 +358,24 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
   open=1;
   queue_unlock();
  }
- if(picture_count>=picture_capacity)return;
+ /* A decoder call can return two pictures. Make BOTH RGBA slots available
+  * before feeding the AU, or the public AVCDEC may retain/delay the second.
+  * A low-memory configuration with just one staging slot uses the previous
+  * single-output behavior rather than allocating unbounded video surfaces. */
+ unsigned available=picture_capacity-picture_count;
+ unsigned requested=available>=2?2:1;
+ void *rgba_outputs[2]={
+  pictures[picture_tail].rgba,
+  requested==2?pictures[(picture_tail+1)%picture_capacity].rgba:NULL
+ };
+ uint64_t actual_pts[2]={0,0};
+ int actual_has_pts[2]={0,0};
  st.submitted++;
  st.decode_calls++;
  if(has_pts)pts_push(pts);
- uint64_t actual_pts=0;
- int actual_has_pts=0;
- DisplayPicture *picture=&pictures[picture_tail];
- int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,picture->rgba,rgba_size,
-                           &actual_pts,&actual_has_pts);
+ int rc=iptvita_avc_decode(&dec,data,size,pts,has_pts,
+                            rgba_outputs,rgba_size,requested,
+                            actual_pts,actual_has_pts);
  if(rc<0) {
   /* Bad AUs may be rejected before contributing a decoded picture. */
   if(has_pts && pending_count) --pending_count;
@@ -422,44 +431,49 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  wait_for_idr=0;
  st.waiting_for_idr=0;
  st.decode_error=0;
- if(rc==0)return;
- /* AVC may return the output for an earlier AU. The hardware produces
-  * decoded pictures in its display sequence; the caller only schedules
-  * presentation after the output exists. */
- int fallback_has_pts=pts_take(&picture->pts);
- picture->has_pts=fallback_has_pts;
- if(actual_has_pts) {
-  picture->pts=actual_pts;
-  picture->has_pts=1;
-  st.hardware_pts++;
- }else if(fallback_has_pts)st.estimated_pts++;
- picture->ready_at=clock_us();
- queue_lock();
- /* Learn true source cadence from successive AVCDEC outputs, NOT
-  * pictures the UI happened to display after dropping a backlog.
-  * A single scene with bad/duplicate PTS cannot force a sudden speedup. */
- if(picture->has_pts) {
-  if(last_decoded_picture_valid) {
-   int64_t ticks=pts_difference(picture->pts,last_decoded_picture_pts);
-   if(ticks>=1500 && ticks<=5400) {
-    unsigned sample=(unsigned)(ticks*1000000LL/90000LL);
-    if(sample>=16000u && sample<=60000u) {
-     frame_interval_us=(frame_interval_us*3u+sample+2u)/4u;
-     st.cadence_ms=(frame_interval_us+500u)/1000u;
+ if(rc==0){st.avc_zero_output++;return;}
+ if(rc==2)st.avc_dual_output++;
+ st.avc_pictures+=(unsigned)rc;
+ /* Publish the two pictures separately in decoder presentation order.
+  * Never replace an already-ready RGBA surface, never infer both output PTS
+  * from the same compressed AU. The original VitaIPTV also publishes each
+  * picture separately when the public AVCDEC returns a pair. */
+ for(int i=0;i<rc;i++) {
+  DisplayPicture *picture=&pictures[picture_tail];
+  int fallback_has_pts=pts_take(&picture->pts);
+  picture->has_pts=fallback_has_pts;
+  if(actual_has_pts[i]) {
+   picture->pts=actual_pts[i];
+   picture->has_pts=1;
+   st.hardware_pts++;
+  }else if(fallback_has_pts)st.estimated_pts++;
+  picture->ready_at=clock_us();
+  queue_lock();
+  /* Use decoder output timestamps to learn natural frame cadence.
+   * Do not train from UI frames: rendering may drop pictures for A/V sync. */
+  if(picture->has_pts) {
+   if(last_decoded_picture_valid) {
+    int64_t ticks=pts_difference(picture->pts,last_decoded_picture_pts);
+    if(ticks>=1500 && ticks<=5400) {
+     unsigned sample=(unsigned)(ticks*1000000LL/90000LL);
+     if(sample>=16000u && sample<=60000u) {
+      frame_interval_us=(frame_interval_us*3u+sample+2u)/4u;
+      st.cadence_ms=(frame_interval_us+500u)/1000u;
+     }
+    }else if(ticks< -90000LL || ticks>90000LL) {
+     last_decoded_picture_valid=0;
+     next_picture_due_us=0;
+     st.pts_discontinuities++;
     }
-   }else if(ticks< -90000LL || ticks>90000LL) {
-    last_decoded_picture_valid=0;
-    next_picture_due_us=0;
-    st.pts_discontinuities++;
    }
+   last_decoded_picture_pts=picture->pts;
+   last_decoded_picture_valid=1;
   }
-  last_decoded_picture_pts=picture->pts;
-  last_decoded_picture_valid=1;
+  picture_tail=(picture_tail+1)%picture_capacity;
+  picture_count++;
+  st.decoded_queued=picture_count;
+  queue_unlock();
  }
- picture_tail=(picture_tail+1)%picture_capacity;
- picture_count++;
- st.decoded_queued=picture_count;
- queue_unlock();
  st.decoder_phase=3;
 }
 void iptvita_preview_submit(const unsigned char *data,size_t size,uint64_t pts,int has_pts,int key)
@@ -602,7 +616,9 @@ static int avc_worker(SceSize args,void *argp)
   queue_lock();
   unsigned long long now=clock_us();
   if(!decoder_paused && !decoder_fatal &&
-     (!picture_capacity || picture_count<picture_capacity)) {
+     (!picture_capacity ||
+      (picture_capacity>=2 ? picture_count+2<=picture_capacity :
+                             picture_count<picture_capacity))) {
    if(!count && !picture_count) {
     if(playback_primed && saw_picture) {
      if(!last_underrun_us || now-last_underrun_us<15000000ULL) {
