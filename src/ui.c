@@ -138,6 +138,38 @@ static void badge(int x, int y, const char *value, unsigned int fg, unsigned int
     rect(x,y,180,27,bg);
     label(x+12,y+8,value,2,fg);
 }
+/* Draw recognizable PlayStation button symbols instead of ASCII commands.
+ * Purely decorative: controller mappings remain in input.c. */
+enum { HINT_CROSS, HINT_CIRCLE, HINT_SQUARE, HINT_TRIANGLE,
+       HINT_LR, HINT_R, HINT_START, HINT_SELECT };
+static void hint_button(int x,int y,int kind,const char *action,Palette p)
+{
+    int w=kind==HINT_LR?39:(kind==HINT_START||kind==HINT_SELECT?54:23);
+    rect(x,y,w,24,p.raised);
+    stroke(x,y,w,24,p.muted);
+    unsigned int color=p.accent;
+    if(kind==HINT_CROSS) {
+        vita2d_draw_line(x+6,y+6,x+17,y+18,color);
+        vita2d_draw_line(x+17,y+6,x+6,y+18,color);
+    }else if(kind==HINT_CIRCLE) {
+        const int dx[]={0,4,8,11,8,4,0,-3,0};
+        const int dy[]={-8,-7,-4,0,4,7,8,0,-8};
+        for(int i=0;i<8;i++)
+            vita2d_draw_line(x+11+dx[i],y+12+dy[i],
+                             x+11+dx[i+1],y+12+dy[i+1],color);
+    }else if(kind==HINT_SQUARE) {
+        stroke(x+6,y+6,12,12,color);
+    }else if(kind==HINT_TRIANGLE) {
+        vita2d_draw_line(x+12,y+5,x+5,y+19,color);
+        vita2d_draw_line(x+5,y+19,x+19,y+19,color);
+        vita2d_draw_line(x+19,y+19,x+12,y+5,color);
+    }else {
+        label(x+5,y+6,kind==HINT_LR?"L/R":
+                          kind==HINT_R?"R":
+                          kind==HINT_START?"START":"SELECT",1,color);
+    }
+    label(x+w+7,y+4,action,2,p.muted);
+}
 static const char *tr(const IptvitaUi *ui, const char *pt, const char *en)
 {
     return ui->language ? en : pt;
@@ -175,8 +207,7 @@ static void heading(int page, Palette p, const char *title, const char *hint)
 static void home(const IptvitaUi *ui, Palette p)
 {
     heading(ui->page,p,tr(ui,"BEM-VINDO","WELCOME"),tr(ui,"UM IPTV LEVE PARA PS VITA","A LIGHTWEIGHT IPTV PLAYER FOR PS VITA"));
-    badge(744,30,tr(ui,"PREVIA UI","UI PREVIEW"),p.accent,p.surface);
-    rect(252,130,672,148,p.surface);
+     rect(252,130,672,148,p.surface);
     rect(252,130,5,148,p.accent);
     label(278,157,tr(ui,"SUAS FONTES","YOUR STREAMS"),4,p.white);
     label(280,203,tr(ui,"TODAS AS SUAS FONTES EM UM LUGAR","ONE PLACE FOR ALL YOUR SOURCES"),2,p.muted);
@@ -187,8 +218,12 @@ static void home(const IptvitaUi *ui, Palette p)
     label(277,327,total,7,p.white);
     label(278,395,tr(ui,"FONTES SALVAS","SAVED SOURCES"),2,p.muted);
     label(617,338,"HLS  AES-128",3,p.white);
-    label(617,387,tr(ui,"EM DESENVOLVIMENTO","IN DEVELOPMENT"),2,p.muted);
-    label(252,488,tr(ui,"L/R TELAS  /  X SELECIONAR  /  START SAIR","L/R SWITCH  /  X SELECT  /  START EXIT"),2,p.muted);
+    label(617,387,tr(ui,"DISPONIVEL PARA USO","READY TO USE"),2,p.accent);
+    if(!ui->hide_control_hints) {
+        hint_button(252,487,HINT_LR,tr(ui,"TELAS","PAGES"),p);
+        hint_button(435,487,HINT_CROSS,tr(ui,"SELECIONAR","SELECT"),p);
+        hint_button(657,487,HINT_START,tr(ui,"SAIR","EXIT"),p);
+    }
 }
 static void clipped(int x,int y,const char *value,int maxchars,int scale,unsigned int color)
 {
@@ -231,10 +266,16 @@ static void editor(const IptvitaUi *ui, Palette p)
         char key[2]={ch,0};
         label(x+17,y+8,key,2,active?p.white:p.muted);
     }
-    label(253,473,ui->grid_keyboard ? tr(ui,"X LETRA  /  QUAD APAGAR  /  L/R CAMPO","X LETTER  /  SQUARE ERASE  /  L/R FIELD") :
-                 tr(ui,"X TECLADO VITA  /  L/R CAMPO  /  SELECT GRADE","X VITA KEYBOARD  /  L/R FIELD  /  SELECT GRID"),2,p.muted);
-    label(253,503,tr(ui,"START MAIUSC/MINUSC  /  TRI SALVAR  /  O VOLTAR",
-                          "START UPPER/LOWER  /  TRI SAVE  /  O BACK"),2,p.accent);
+    if(!ui->hide_control_hints) {
+        hint_button(253,467,HINT_CROSS,ui->grid_keyboard?
+                    tr(ui,"LETRA","LETTER"):tr(ui,"TECLADO","KEYBOARD"),p);
+        hint_button(409,467,HINT_SQUARE,tr(ui,"APAGAR","ERASE"),p);
+        hint_button(552,467,HINT_LR,tr(ui,"CAMPO","FIELD"),p);
+        hint_button(735,467,HINT_SELECT,tr(ui,"GRADE","GRID"),p);
+        hint_button(253,501,HINT_START,tr(ui,"MAIUSC/MINUSC","UPPER/LOWER"),p);
+        hint_button(522,501,HINT_TRIANGLE,tr(ui,"SALVAR","SAVE"),p);
+        hint_button(714,501,HINT_CIRCLE,tr(ui,"VOLTAR","BACK"),p);
+    }
     if(ui->save_status==2) label(605,146,tr(ui,"NOME E URL OBRIGATORIOS","NAME AND URL REQUIRED"),2,p.accent);
 }
 static void channel_browser(const IptvitaUi *ui, Palette p)
@@ -340,8 +381,12 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
 {
     if(ui->browsing) { channel_browser(ui,p); return; }
     heading(ui->page,p,tr(ui,"FONTES SALVAS","SAVED SOURCES"),
-            tr(ui,"X ABRIR  /  R EDITAR  /  QUAD EXCLUIR",
-                          "X OPEN  /  R EDIT  /  SQUARE DELETE"));
+            tr(ui,"GERENCIE SUAS FONTES","MANAGE YOUR SAVED SOURCES"));
+    if(!ui->hide_control_hints) {
+        hint_button(252,510,HINT_CROSS,tr(ui,"ABRIR","OPEN"),p);
+        hint_button(426,510,HINT_R,tr(ui,"EDITAR","EDIT"),p);
+        hint_button(642,510,HINT_SQUARE,tr(ui,"EXCLUIR","DELETE"),p);
+    }
     if(!ui->sources.count)
         label(267,164,tr(ui,"NENHUMA FONTE SALVA","NO SOURCES SAVED"),3,p.muted);
     unsigned int offset=ui->list_index>=7 ? (unsigned int)(ui->list_index-6) : 0;
@@ -354,13 +399,13 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
         const char *types[]={"M3U","XTREAM","DIRETO","LOCAL"};
         label(795,y+10,types[ui->sources.items[i].type],2,p.muted);
     }
-    if(ui->sources.count>7) {
-        label(252,458,tr(ui,"USE CIMA/BAIXO PARA ROLAR","USE UP/DOWN TO SCROLL"),2,p.muted);
+    if(ui->sources.count>7 && !ui->save_status) {
+        label(252,476,tr(ui,"USE CIMA/BAIXO PARA ROLAR","USE UP/DOWN TO SCROLL"),2,p.muted);
     }
-    if(ui->save_status==1) label(252,491,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
-    if(ui->save_status==4) label(252,491,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
-    if(ui->save_status==6) label(252,491,tr(ui,"XTREAM OU ENDERECO NAO SUPORTADO","XTREAM OR UNSUPPORTED ADDRESS"),2,p.accent);
-    if(ui->save_status==7) label(252,491,tr(ui,"URL INVALIDA OU DOWNLOAD OCUPADO","INVALID URL OR DOWNLOAD BUSY"),2,p.accent);
+    if(ui->save_status==1) label(252,476,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
+    if(ui->save_status==4) label(252,476,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
+    if(ui->save_status==6) label(252,476,tr(ui,"XTREAM OU ENDERECO NAO SUPORTADO","XTREAM OR UNSUPPORTED ADDRESS"),2,p.accent);
+    if(ui->save_status==7) label(252,476,tr(ui,"URL INVALIDA OU DOWNLOAD OCUPADO","INVALID URL OR DOWNLOAD BUSY"),2,p.accent);
 }
 
 static void sources(const IptvitaUi *ui, Palette p)
@@ -383,12 +428,16 @@ static void sources(const IptvitaUi *ui, Palette p)
         label(x+18,y+72,names[i],2,p.white);
         label(x+18,y+105,details[i],2,p.muted);
     }
-    label(252,476,tr(ui,"X ADICIONAR  /  SELECT LISTA SALVA  /  O VOLTAR","X ADD  /  SELECT SAVED LIST  /  O BACK"),2,p.muted);
+    if(!ui->hide_control_hints) {
+        hint_button(252,476,HINT_CROSS,tr(ui,"ADICIONAR","ADD"),p);
+        hint_button(447,476,HINT_SELECT,tr(ui,"FONTES SALVAS","SAVED LIST"),p);
+        hint_button(752,476,HINT_CIRCLE,tr(ui,"VOLTAR","BACK"),p);
+    }
 }
 static void settings(const IptvitaUi *ui, Palette p)
 {
-    static const char *items_pt[]={"TEMA DE CORES","RESOLUCAO PREFERIDA","IDIOMA"};
-    static const char *items_en[]={"COLOR THEME","PREFERRED RESOLUTION","LANGUAGE"};
+    static const char *items_pt[]={"TEMA DE CORES","DICAS DE CONTROLES","IDIOMA"};
+    static const char *items_en[]={"COLOR THEME","CONTROL HINTS","LANGUAGE"};
     const char **items=ui->language ? items_en : items_pt;
     heading(ui->page,p,tr(ui,"AJUSTES","SETTINGS"),
             tr(ui,"PERSONALIZE SUA EXPERIENCIA","VISUAL PREFERENCES AND FUTURE OPTIONS"));
@@ -403,16 +452,16 @@ static void settings(const IptvitaUi *ui, Palette p)
             const char *themes_en[]={"DEEP BLUE","OCEAN TEAL","INDIGO"};
             label(277,y+50,ui->language?themes_en[ui->theme]:themes_pt[ui->theme],2,p.accent);
         } else if (i==1) {
-            label(277,y+50,tr(ui,"AUTO / 720P / 1080P (EM BREVE)",
-                                 "AUTO / 720P / 1080P (COMING SOON)"),2,p.muted);
+            label(277,y+50,ui->hide_control_hints?
+                  tr(ui,"OCULTAS","HIDDEN"):tr(ui,"VISIVEIS","VISIBLE"),2,p.accent);
         } else {
             label(277,y+50,ui->language?"ENGLISH":"PORTUGUES (BR)",2,p.accent);
         }
     }
-    label(252,467,tr(ui,"X ALTERAR TEMA OU IDIOMA  /  O VOLTAR",
-                         "X CHANGE THEME OR LANGUAGE  /  O BACK"),2,p.muted);
-    label(252,495,tr(ui,"OUTRAS OPCOES CHEGAM COM O PLAYER",
-                         "OTHER OPTIONS ARRIVE WITH PLAYBACK"),2,p.muted);
+    if(!ui->hide_control_hints) {
+        hint_button(252,478,HINT_CROSS,tr(ui,"ALTERAR","CHANGE"),p);
+        hint_button(489,478,HINT_CIRCLE,tr(ui,"VOLTAR","BACK"),p);
+    }
 }
 static void about(const IptvitaUi *ui, Palette p)
 {
@@ -425,12 +474,31 @@ static void about(const IptvitaUi *ui, Palette p)
     label(284,280,tr(ui,"CRIADO POR YURIHBO","CREATED BY YURIHBO"),3,p.white);
     label(284,328,tr(ui,"LICENCA MIT  2026 YURIHBO","MIT LICENSE  2026 YURIHBO"),2,p.muted);
     label(284,361,"C / VITASDK / PLAYSTATION VITA",2,p.muted);
-    label(252,488,tr(ui,"O VOLTAR  /  L/R MUDAR TELAS",
-                         "O BACK  /  L/R SWITCH PAGES"),2,p.muted);
+    if(!ui->hide_control_hints) {
+        hint_button(252,488,HINT_CIRCLE,tr(ui,"VOLTAR","BACK"),p);
+        hint_button(480,488,HINT_LR,tr(ui,"MUDAR TELAS","SWITCH PAGES"),p);
+    }
 }
 static void dialog(const IptvitaUi *ui, Palette p)
 {
     rect(168,152,625,241,p.bg);
+    if(ui->delete_confirm) {
+        stroke(168,152,625,241,p.accent);
+        label(198,179,tr(ui,"EXCLUIR FONTE?","DELETE SOURCE?"),4,p.white);
+        if(ui->delete_index>=0 && ui->delete_index<(int)ui->sources.count)
+            clipped(200,227,ui->sources.items[ui->delete_index].name,37,2,p.muted);
+        label(199,258,tr(ui,"TEM CERTEZA QUE DESEJA EXCLUIR ESTA FONTE?",
+                        "ARE YOU SURE YOU WANT TO DELETE THIS SOURCE?"),2,p.white);
+        rect(210,312,159,45,ui->delete_yes?p.selected:p.raised);
+        rect(402,312,159,45,ui->delete_yes?p.raised:p.selected);
+        if(ui->delete_yes)stroke(210,312,159,45,p.accent);
+        else stroke(402,312,159,45,p.accent);
+        label(259,326,tr(ui,"SIM","YES"),3,ui->delete_yes?p.white:p.muted);
+        label(449,326,tr(ui,"NAO","NO"),3,ui->delete_yes?p.muted:p.white);
+        hint_button(575,314,HINT_CROSS,tr(ui,"CONFIRMAR","CONFIRM"),p);
+        hint_button(575,348,HINT_CIRCLE,tr(ui,"CANCELAR","CANCEL"),p);
+        return;
+    }
     stroke(168,152,625,241,p.accent);
     label(206,193,ui->quit_confirm?tr(ui,"SAIR DO IPTVITA?","EXIT IPTVITA?"):
                                    tr(ui,"DISPONIVEL NA ETAPA 3","COMING IN STAGE 3"),3,p.white);
@@ -532,5 +600,5 @@ void iptvita_ui_render(const IptvitaUi *ui)
     if (ui->editing) {
         rect(222,0,738,544,p.bg);
         editor(ui,p);
-    } else if (ui->show_dialog || ui->quit_confirm) dialog(ui,p);
+    } else if (ui->show_dialog || ui->quit_confirm || ui->delete_confirm) dialog(ui,p);
 }
