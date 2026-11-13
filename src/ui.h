@@ -25,6 +25,10 @@ typedef struct {
     int language; /* 0 = pt-BR (default), 1 = English */
     int show_dialog;
     int quit_confirm;
+    int delete_confirm; /* confirmation-only UI, selected source remains untouched */
+    int delete_index;
+    int delete_yes; /* 0 = default NO, 1 = YES */
+    int hide_control_hints; /* visual-only preference, default show */
     int list_mode;
     int browsing;
     int channel_index;
