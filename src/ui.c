@@ -141,7 +141,7 @@ static void badge(int x, int y, const char *value, unsigned int fg, unsigned int
 /* Draw recognizable PlayStation button symbols instead of ASCII commands.
  * Purely decorative: controller mappings remain in input.c. */
 enum { HINT_CROSS, HINT_CIRCLE, HINT_SQUARE, HINT_TRIANGLE,
-       HINT_LR, HINT_START, HINT_SELECT };
+       HINT_LR, HINT_R, HINT_START, HINT_SELECT };
 static void hint_button(int x,int y,int kind,const char *action,Palette p)
 {
     int w=kind==HINT_LR?39:(kind==HINT_START||kind==HINT_SELECT?54:23);
@@ -165,6 +165,7 @@ static void hint_button(int x,int y,int kind,const char *action,Palette p)
         vita2d_draw_line(x+19,y+19,x+12,y+5,color);
     }else {
         label(x+5,y+6,kind==HINT_LR?"L/R":
+                          kind==HINT_R?"R":
                           kind==HINT_START?"START":"SELECT",1,color);
     }
     label(x+w+7,y+4,action,2,p.muted);
@@ -382,9 +383,9 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
     heading(ui->page,p,tr(ui,"FONTES SALVAS","SAVED SOURCES"),
             tr(ui,"GERENCIE SUAS FONTES","MANAGE YOUR SAVED SOURCES"));
     if(!ui->hide_control_hints) {
-        hint_button(252,506,HINT_CROSS,tr(ui,"ABRIR","OPEN"),p);
-        hint_button(426,506,HINT_LR,tr(ui,"R EDITAR","R EDIT"),p);
-        hint_button(642,506,HINT_SQUARE,tr(ui,"EXCLUIR","DELETE"),p);
+        hint_button(252,510,HINT_CROSS,tr(ui,"ABRIR","OPEN"),p);
+        hint_button(426,510,HINT_R,tr(ui,"EDITAR","EDIT"),p);
+        hint_button(642,510,HINT_SQUARE,tr(ui,"EXCLUIR","DELETE"),p);
     }
     if(!ui->sources.count)
         label(267,164,tr(ui,"NENHUMA FONTE SALVA","NO SOURCES SAVED"),3,p.muted);
@@ -398,13 +399,13 @@ static void saved_sources(const IptvitaUi *ui, Palette p)
         const char *types[]={"M3U","XTREAM","DIRETO","LOCAL"};
         label(795,y+10,types[ui->sources.items[i].type],2,p.muted);
     }
-    if(ui->sources.count>7) {
-        label(252,458,tr(ui,"USE CIMA/BAIXO PARA ROLAR","USE UP/DOWN TO SCROLL"),2,p.muted);
+    if(ui->sources.count>7 && !ui->save_status) {
+        label(252,476,tr(ui,"USE CIMA/BAIXO PARA ROLAR","USE UP/DOWN TO SCROLL"),2,p.muted);
     }
-    if(ui->save_status==1) label(252,491,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
-    if(ui->save_status==4) label(252,491,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
-    if(ui->save_status==6) label(252,491,tr(ui,"XTREAM OU ENDERECO NAO SUPORTADO","XTREAM OR UNSUPPORTED ADDRESS"),2,p.accent);
-    if(ui->save_status==7) label(252,491,tr(ui,"URL INVALIDA OU DOWNLOAD OCUPADO","INVALID URL OR DOWNLOAD BUSY"),2,p.accent);
+    if(ui->save_status==1) label(252,476,tr(ui,"ALTERACOES SALVAS","CHANGES SAVED"),2,p.accent);
+    if(ui->save_status==4) label(252,476,tr(ui,"ERRO AO SALVAR NO CARTAO","STORAGE WRITE ERROR"),2,p.accent);
+    if(ui->save_status==6) label(252,476,tr(ui,"XTREAM OU ENDERECO NAO SUPORTADO","XTREAM OR UNSUPPORTED ADDRESS"),2,p.accent);
+    if(ui->save_status==7) label(252,476,tr(ui,"URL INVALIDA OU DOWNLOAD OCUPADO","INVALID URL OR DOWNLOAD BUSY"),2,p.accent);
 }
 
 static void sources(const IptvitaUi *ui, Palette p)
@@ -481,6 +482,23 @@ static void about(const IptvitaUi *ui, Palette p)
 static void dialog(const IptvitaUi *ui, Palette p)
 {
     rect(168,152,625,241,p.bg);
+    if(ui->delete_confirm) {
+        stroke(168,152,625,241,p.accent);
+        label(198,179,tr(ui,"EXCLUIR FONTE?","DELETE SOURCE?"),4,p.white);
+        if(ui->delete_index>=0 && ui->delete_index<(int)ui->sources.count)
+            clipped(200,227,ui->sources.items[ui->delete_index].name,37,2,p.muted);
+        label(199,258,tr(ui,"TEM CERTEZA QUE DESEJA EXCLUIR ESTA FONTE?",
+                        "ARE YOU SURE YOU WANT TO DELETE THIS SOURCE?"),2,p.white);
+        rect(210,312,159,45,ui->delete_yes?p.selected:p.raised);
+        rect(402,312,159,45,ui->delete_yes?p.raised:p.selected);
+        if(ui->delete_yes)stroke(210,312,159,45,p.accent);
+        else stroke(402,312,159,45,p.accent);
+        label(259,326,tr(ui,"SIM","YES"),3,ui->delete_yes?p.white:p.muted);
+        label(449,326,tr(ui,"NAO","NO"),3,ui->delete_yes?p.muted:p.white);
+        label(591,320,tr(ui,"X CONFIRMAR","X CONFIRM"),2,p.accent);
+        label(591,344,tr(ui,"O CANCELAR","O CANCEL"),2,p.muted);
+        return;
+    }
     stroke(168,152,625,241,p.accent);
     label(206,193,ui->quit_confirm?tr(ui,"SAIR DO IPTVITA?","EXIT IPTVITA?"):
                                    tr(ui,"DISPONIVEL NA ETAPA 3","COMING IN STAGE 3"),3,p.white);
@@ -582,5 +600,5 @@ void iptvita_ui_render(const IptvitaUi *ui)
     if (ui->editing) {
         rect(222,0,738,544,p.bg);
         editor(ui,p);
-    } else if (ui->show_dialog || ui->quit_confirm) dialog(ui,p);
+    } else if (ui->show_dialog || ui->quit_confirm || ui->delete_confirm) dialog(ui,p);
 }
