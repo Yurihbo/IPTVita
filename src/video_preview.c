@@ -89,6 +89,11 @@ static uint64_t pending_pts[PTS_WINDOW];
 static unsigned pending_count;
 static uint64_t last_shown_pts;
 static int last_shown_valid;
+/* Wall-clock pacing is independent of how far audio has advanced.
+ * Recover lateness by dropping stale PRESENTATIONS, never by running
+ * surviving animation frames at the Vita's ~60-Hz render cadence. */
+static unsigned long long last_picture_us;
+static unsigned frame_interval_us=33333u;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
 /* sceKernelGetFreeMemorySize reports available system pool budgets. This is
  * a conservative admission check, not a reservation; every AU is still
@@ -220,6 +225,9 @@ static void clear_presentation(void)
  picture_head=picture_tail=picture_count=0;
  last_shown_valid=0;
  last_shown_pts=0;
+ last_picture_us=0;
+ frame_interval_us=33333u;
+ st.cadence_ms=33;
  st.decoded_queued=0;
 }
 
@@ -493,8 +501,34 @@ static void present_picture(void)
  st.decoded++;
  saw_picture=1;
  st.last_output_us=clock_us();
+ last_picture_us=st.last_output_us;
  if(picture->has_pts){last_shown_pts=picture->pts;last_shown_valid=1;}
  retire_picture();
+}
+/* Frame-rate limiter for images already approved by audio PTS.
+ * Audio is a master clock, not an instruction to render all late pictures
+ * as quickly as possible. Use presentation PTS intervals when credible:
+ * ~3750 ticks = 24 FPS, 3600 = 25, 3000 = 30.
+ * Gaps larger than one source frame indicate dropped pictures, not an
+ * intentional long frame, so preserve the most recent learned cadence. */
+static int cadence_due(const DisplayPicture *picture,unsigned long long now)
+{
+ if(!last_picture_us)return 1;
+ unsigned interval=frame_interval_us;
+ if(picture->has_pts && last_shown_valid) {
+  int64_t ticks=pts_difference(picture->pts,last_shown_pts);
+  if(ticks>=1500 && ticks<=5400) {
+   unsigned measured=(unsigned)((ticks*1000000LL)/90000LL);
+   if(measured>=16000u && measured<=60000u)interval=measured;
+  }
+ }
+ if(now>=last_picture_us && now-last_picture_us<(unsigned long long)interval) {
+  st.cadence_waits++;
+  return 0;
+ }
+ frame_interval_us=interval;
+ st.cadence_ms=(interval+500u)/1000u;
+ return 1;
 }
 static int presentation_due(unsigned long long now)
 {
@@ -641,9 +675,10 @@ void iptvita_preview_tick(void)
    retire_picture();
    continue;
   }
+  if(!cadence_due(p,now))break;
   int no_pts=!p->has_pts;
   present_picture();
-  if(no_pts)due_at=now+33333ULL;
+  if(no_pts)due_at=now+(unsigned long long)frame_interval_us;
   break;
  }
  /* Measure real pictures presented and codec calls, not the screen capture
@@ -663,6 +698,7 @@ void iptvita_preview_pause(int on)
  queue_lock();
  decoder_paused=on?1:0;
  if(!on) {
+  last_picture_us=0;
   due_at=0;
   video_clock_valid=audio_master_active=0;
   previous_pts_valid=0;
