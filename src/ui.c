@@ -495,8 +495,8 @@ static void dialog(const IptvitaUi *ui, Palette p)
         else stroke(402,312,159,45,p.accent);
         label(259,326,tr(ui,"SIM","YES"),3,ui->delete_yes?p.white:p.muted);
         label(449,326,tr(ui,"NAO","NO"),3,ui->delete_yes?p.muted:p.white);
-        label(591,320,tr(ui,"X CONFIRMAR","X CONFIRM"),2,p.accent);
-        label(591,344,tr(ui,"O CANCELAR","O CANCEL"),2,p.muted);
+        hint_button(575,314,HINT_CROSS,tr(ui,"CONFIRMAR","CONFIRM"),p);
+        hint_button(575,348,HINT_CIRCLE,tr(ui,"CANCELAR","CANCEL"),p);
         return;
     }
     stroke(168,152,625,241,p.accent);
