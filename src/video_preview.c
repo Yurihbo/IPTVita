@@ -95,6 +95,10 @@ static int last_shown_valid;
 static unsigned long long last_picture_us;
 static unsigned long long next_picture_due_us;
 static unsigned long long last_catchup_skip_us;
+static unsigned long long rebuffer_since_us;
+/* Live playback must never deadlock at a full RGBA presentation queue. */
+#define PICTURE_STALL_RESCUE_US 1250000ULL
+#define REBUFFER_MAX_WAIT_US 5000000ULL
 static unsigned frame_interval_us=33333u;
 static uint64_t last_decoded_picture_pts;
 static int last_decoded_picture_valid;
@@ -232,6 +236,7 @@ static void clear_presentation(void)
  last_picture_us=0;
  next_picture_due_us=0;
  last_catchup_skip_us=0;
+ rebuffer_since_us=0;
  last_decoded_picture_pts=0;
  last_decoded_picture_valid=0;
  frame_interval_us=33333u;
@@ -259,7 +264,8 @@ void iptvita_preview_reset(void)
  head=tail=0;total_bytes=0;
  queue_count_limit=QUEUE_BASE_COUNT;queue_bytes_limit=QUEUE_BASE_BYTES;
  queue_big_since=queue_check_at=0;
- due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
+ due_at=0;playback_primed=0;rebuffer_since_us=0;
+ previous_pts_valid=0;previous_pts=0;
  video_clock_valid=audio_master_active=0;video_base_pts=video_base_us=0;
  rebuffer_target=REBUFFER_MIN;last_underrun_us=last_target_decay_us=0;
  saw_picture=0;
@@ -528,6 +534,28 @@ static void retire_picture(void)
  picture_count--;
  st.decoded_queued=picture_count;
 }
+/* Decoder order is not always display order. An H.264 stream with
+ * B-frames may publish PTS 100, 166, 133: showing each ready FIFO picture
+ * creates apparent backwards motion or forces the 133 frame to be dropped.
+ * Reorder only the already-published slots (up to three). Never touch a
+ * free surface on which AVCDEC may currently be writing. */
+static void promote_earliest_picture_locked(void)
+{
+ if(picture_count<2 || picture_capacity<2)return;
+ unsigned best=picture_head;
+ for(unsigned i=1;i<picture_count;i++) {
+  unsigned slot=(picture_head+i)%picture_capacity;
+  if(!pictures[slot].has_pts || !pictures[best].has_pts)continue;
+  int64_t delta=pts_difference(pictures[slot].pts,pictures[best].pts);
+  if(delta<0 && delta> -90000LL*2)best=slot;
+ }
+ if(best!=picture_head) {
+  DisplayPicture tmp=pictures[picture_head];
+  pictures[picture_head]=pictures[best];
+  pictures[best]=tmp;
+  st.presentation_reorders++;
+ }
+}
 static void present_picture(void)
 {
  if(!picture_count || !texture)return;
@@ -629,6 +657,7 @@ static int avc_worker(SceSize args,void *argp)
      st.buffer_events++;
     }
     playback_primed=0;
+    if(!rebuffer_since_us)rebuffer_since_us=now;
     st.buffering=1;
     st.buffer_target=saw_picture?rebuffer_target:START_FRAMES;
     st.buffer_percent=0;
@@ -638,8 +667,19 @@ static int avc_worker(SceSize args,void *argp)
      st.buffering=1;
      st.buffer_target=goal;
      st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
-     if(count>=goal || total_bytes>=queue_bytes_limit/2) {
+     if(!rebuffer_since_us)rebuffer_since_us=now;
+     int enough=count>=goal || total_bytes>=queue_bytes_limit/2;
+     /* The live playlist may stop producing segments before the adaptive
+      * target is reached. Never withhold already-buffered pictures forever:
+      * after a bounded wait, resume using the available AUs. No fabricated
+      * input is emitted if the network supplies nothing. */
+     int timed_out=saw_picture && count>=2 &&
+         now>=rebuffer_since_us &&
+         now-rebuffer_since_us>=REBUFFER_MAX_WAIT_US;
+     if(enough || timed_out) {
+      if(timed_out && !enough)st.rebuffer_timeouts++;
       playback_primed=1;
+      rebuffer_since_us=0;
       st.buffering=0;
       previous_pts_valid=0;
       video_clock_valid=audio_master_active=0;
@@ -702,12 +742,32 @@ void iptvita_preview_tick(void)
  if(!texture)return;
  queue_lock();
  unsigned long long now=clock_us();
+ promote_earliest_picture_locked();
  /* Recover an A/V backlog in a single UI tick. Only discard already
   * decoded pictures; never drop compressed P/B reference AUs. When all
   * pictures are late, present the latest rather than freezing forever. */
  for(unsigned tries=0;tries<DISPLAY_SLOTS && picture_count;tries++) {
-  if(!presentation_due(now)) {st.picture_waits++;break;}
   DisplayPicture *p=&pictures[picture_head];
+  /* If every RGBA slot is full and the displayed picture has not advanced
+   * for over a second, presentation PTS may be stalled. One bounded rescue
+   * releases a slot so the independent decoder can feed the next AU. */
+  int full=picture_capacity>0 && picture_count>=picture_capacity;
+  int old_picture=now>=p->ready_at &&
+                  now-p->ready_at>=PICTURE_STALL_RESCUE_US;
+  int no_progress=!st.last_output_us ||
+                  (now>st.last_output_us &&
+                   now-st.last_output_us>=PICTURE_STALL_RESCUE_US);
+  int rescue=full && old_picture && no_progress;
+  if(!rescue && !presentation_due(now)) {
+   st.picture_waits++;
+   break;
+  }
+  if(rescue) {
+   st.stall_rescues++;
+   video_clock_valid=0;
+   audio_master_active=0;
+   next_picture_due_us=0;
+  }
   uint64_t audio_pts=0;
   int has_audio=p->has_pts && iptvita_audio_clock(&audio_pts);
   int64_t av_delta=has_audio?pts_difference(p->pts,audio_pts):0;
@@ -729,7 +789,7 @@ void iptvita_preview_tick(void)
    /* Do not drop several good pictures during a single screen tick. */
    break;
   }
-  if(!cadence_due(p,now))break;
+  if(!rescue && !cadence_due(p,now))break;
   int no_pts=!p->has_pts;
   present_picture();
   if(no_pts)due_at=next_picture_due_us;
