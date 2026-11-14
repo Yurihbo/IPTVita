@@ -577,10 +577,9 @@ void iptvita_ui_render(const IptvitaUi *ui)
             }
             {
                 char cache_line[64];
-                snprintf(cache_line,sizeof(cache_line),"HLS %u / 2PIC %u / ORD %u / LIB %u / RB %u",
-                         iptvita_network_prefetch_hits(),v.avc_dual_output,
-                         v.presentation_reorders,v.stall_rescues,
-                         v.rebuffer_timeouts);
+                snprintf(cache_line,sizeof(cache_line),"HLS HITS %u / AVC 2PIC %u ZERO %u",
+                         iptvita_network_prefetch_hits(),
+                         v.avc_dual_output,v.avc_zero_output);
                 label(25,444,cache_line,2,p.accent);
             }
             label(25,505,ui->stream_paused?
