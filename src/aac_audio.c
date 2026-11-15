@@ -8,7 +8,12 @@
 #include <stdlib.h>
 
 #define FIFO 384
-#define PREBUFFER 72
+/* 72 AAC-LC frames add ~1.54s at 48kHz (1.67s at 44.1kHz)
+ * before first sound. Video is already playing during this delay.
+ * Start at ~0.34s; after a true underrun refill ~0.51s to keep audio
+ * continuous. These are thresholds, not permanent playback latency. */
+#define PREBUFFER_START 16
+#define PREBUFFER_RECOVER 24
 #define MAX_ADTS 8192
 static const int rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
 typedef struct {unsigned short len;unsigned char bytes[MAX_ADTS];uint64_t pts90k;int valid_pts;} Frame;
@@ -16,6 +21,7 @@ static Frame fifo[FIFO];
 static unsigned head,tail,count;
 static volatile int running,paused;
 static int primed;
+static unsigned prime_target=PREBUFFER_START;
 static SceUID mutex=-1,thread=-1;
 static IptvitaAudioStats stats;
 static SceAudiodecCtrl codec;
@@ -90,11 +96,18 @@ static int worker(SceSize args,void *argp)
  while(running) {
   int got=0;
   lock();
-  if(!paused && count>=PREBUFFER)primed=1;
+  if(!paused && !primed && count>=prime_target)primed=1;
   if(primed && count && !paused && cur) {
    *cur=fifo[head];head=(head+1)%FIFO;count--;got=1;
   }
-  if(!count){primed=0;played_valid=0;}
+  /* The last queued frame is still about to be decoded and played.
+   * Do NOT enter rebuffer here just because popping it made count=0:
+   * doing so repeatedly introduced avoidable AAC pauses/latency. */
+  if(!count && !got && !paused) {
+   primed=0;
+   played_valid=0;
+   prime_target=PREBUFFER_RECOVER;
+  }
   stats.buffered=count;
   stats.primed=primed;
   unlock();
@@ -141,6 +154,7 @@ int iptvita_audio_start(void)
  if(running)return 0;
  memset(&stats,0,sizeof stats);
  count=head=tail=0;carry_len=0;paused=0;primed=0;
+ prime_target=PREBUFFER_START;
  enqueue_pts=played_pts=0;played_at=0;enqueue_valid=played_valid=0;
  mutex=sceKernelCreateMutex("iptvita_audio_lock",0,0,NULL);
  if(mutex<0)return -1;
@@ -217,5 +231,6 @@ void iptvita_audio_stop(void)
  if(thread>=0){sceKernelWaitThreadEnd(thread,NULL,NULL);thread=-1;}
  if(mutex>=0){sceKernelDeleteMutex(mutex);mutex=-1;}
  count=head=tail=0;carry_len=0;primed=0;
+ prime_target=PREBUFFER_START;
  enqueue_valid=played_valid=0;
 }
