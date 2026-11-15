@@ -99,6 +99,10 @@ static int last_shown_valid;
  * Recover lateness by dropping stale PRESENTATIONS, never by running
  * surviving animation frames at the Vita's ~60-Hz render cadence. */
 static unsigned long long last_picture_us;
+/* Keep the 90-kHz source rhythm on a persistent wall-clock deadline.
+ * Re-basing to 'now' after EVERY shown frame quantized a ~33-ms cadence
+ * against Vita VBlank and often capped 30-fps streams at ~19-20 fps. */
+static unsigned long long next_picture_due_us;
 static unsigned frame_interval_us=33333u;
 static unsigned long long clock_us(void){return (unsigned long long)sceKernelGetProcessTimeWide();}
 /* sceKernelGetFreeMemorySize reports available system pool budgets. This is
@@ -232,6 +236,7 @@ static void clear_presentation(void)
  last_shown_valid=0;
  last_shown_pts=0;
  last_picture_us=0;
+ next_picture_due_us=0;
  frame_interval_us=33333u;
  st.cadence_ms=33;
  st.decoded_queued=0;
@@ -513,6 +518,14 @@ static void present_picture(void)
  saw_picture=1;
  st.last_output_us=clock_us();
  last_picture_us=st.last_output_us;
+ /* Advance from the PREVIOUS intended deadline, not from the current
+  * (slightly late) draw tick. Clamp only genuine multi-frame stalls so
+  * the UI never displays a fast burst of pictures to catch up. */
+ if(!next_picture_due_us ||
+    st.last_output_us>next_picture_due_us+2ULL*frame_interval_us)
+  next_picture_due_us=st.last_output_us+frame_interval_us;
+ else
+  next_picture_due_us+=frame_interval_us;
  if(picture->has_pts){last_shown_pts=picture->pts;last_shown_valid=1;}
  retire_picture();
 }
@@ -529,16 +542,25 @@ static int cadence_due(const DisplayPicture *picture,unsigned long long now)
  if(picture->has_pts && last_shown_valid) {
   int64_t ticks=pts_difference(picture->pts,last_shown_pts);
   if(ticks>=1500 && ticks<=5400) {
-   unsigned measured=(unsigned)((ticks*1000000LL)/90000LL);
+   unsigned measured=(unsigned)(ticks*1000000LL/90000LL);
    if(measured>=16000u && measured<=60000u)interval=measured;
   }
  }
- if(now>=last_picture_us && now-last_picture_us<(unsigned long long)interval) {
-  st.cadence_waits++;
-  return 0;
+ /* On a genuine rate change (e.g. 24 fps anime versus 30 fps movie),
+  * adjust one deadline only once, preserving the fractional remainder.
+  * A new rendering tick must not restart the interval. */
+ if(!next_picture_due_us)next_picture_due_us=last_picture_us+interval;
+ else if(interval!=frame_interval_us) {
+  if(next_picture_due_us>=frame_interval_us)
+   next_picture_due_us=next_picture_due_us-frame_interval_us+interval;
+  else next_picture_due_us=now+interval;
  }
  frame_interval_us=interval;
  st.cadence_ms=(interval+500u)/1000u;
+ if(now<next_picture_due_us) {
+  st.cadence_waits++;
+  return 0;
+ }
  return 1;
 }
 static int presentation_due(unsigned long long now)
@@ -766,6 +788,7 @@ void iptvita_preview_pause(int on)
  decoder_paused=on?1:0;
  if(!on) {
   last_picture_us=0;
+  next_picture_due_us=0;
   last_catchup_drop_us=0;
   due_at=0;
   video_clock_valid=audio_master_active=0;
