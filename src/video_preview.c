@@ -37,6 +37,7 @@ static unsigned long long fps_window_us;
 static unsigned fps_decode_base,fps_present_base;
 static unsigned fps_picture_base,fps_drop_base;
 static unsigned fps_backward_base,fps_lag_base;
+static unsigned fps_ui_base;
 static unsigned long long last_catchup_drop_us;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
@@ -288,7 +289,7 @@ void iptvita_preview_reset(void)
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
  fps_window_us=0;fps_decode_base=fps_present_base=0;
  fps_picture_base=fps_drop_base=0;
- fps_backward_base=fps_lag_base=0;
+ fps_backward_base=fps_lag_base=fps_ui_base=0;
  last_catchup_drop_us=0;
 }
 int iptvita_preview_start(void)
@@ -683,6 +684,8 @@ static int avc_worker(SceSize args,void *argp)
 /* UI thread: GXM/vita2d objects never cross into the AVC worker. */
 void iptvita_preview_tick(void)
 {
+ /* Count UI opportunities separately from pictures actually shown. */
+ st.ui_ticks++;
  unsigned width=0,height=0;
  queue_lock();
  if(picture_count && st.width>0 && st.height>0) {
@@ -765,6 +768,7 @@ void iptvita_preview_tick(void)
   fps_picture_base=st.output_pictures;fps_drop_base=st.late_pictures;
   fps_backward_base=st.backward_picture_drops;
   fps_lag_base=st.audio_lag_picture_drops;
+  fps_ui_base=st.ui_ticks;
  }
  else if(now>=fps_window_us && now-fps_window_us>=1000000ULL) {
   unsigned long long delta=now-fps_window_us;
@@ -774,11 +778,13 @@ void iptvita_preview_tick(void)
   st.drop_fps=(unsigned)(((unsigned long long)(st.late_pictures-fps_drop_base)*1000000ULL)/delta);
   st.backward_drop_fps=(unsigned)(((unsigned long long)(st.backward_picture_drops-fps_backward_base)*1000000ULL)/delta);
   st.audio_lag_drop_fps=(unsigned)(((unsigned long long)(st.audio_lag_picture_drops-fps_lag_base)*1000000ULL)/delta);
+  st.ui_fps=(unsigned)(((unsigned long long)(st.ui_ticks-fps_ui_base)*1000000ULL)/delta);
   st.video_fps_samples++;
   fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
   fps_picture_base=st.output_pictures;fps_drop_base=st.late_pictures;
   fps_backward_base=st.backward_picture_drops;
   fps_lag_base=st.audio_lag_picture_drops;
+  fps_ui_base=st.ui_ticks;
  }
  queue_unlock();
 }
