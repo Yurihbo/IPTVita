@@ -35,6 +35,8 @@ static int worker_enabled;
 static unsigned long long last_decoder_us;
 static unsigned long long fps_window_us;
 static unsigned fps_decode_base,fps_present_base;
+static unsigned fps_picture_base,fps_drop_base;
+static unsigned long long last_catchup_drop_us;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
@@ -279,6 +281,8 @@ void iptvita_preview_reset(void)
  queue_publish_limits();
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
  fps_window_us=0;fps_decode_base=fps_present_base=0;
+ fps_picture_base=fps_drop_base=0;
+ last_catchup_drop_us=0;
 }
 int iptvita_preview_start(void)
 {
@@ -418,7 +422,8 @@ static void decode_frame(const unsigned char *data,size_t size,uint64_t pts,int 
  wait_for_idr=0;
  st.waiting_for_idr=0;
  st.decode_error=0;
- if(rc==0)return;
+ if(rc==0){st.empty_decode_calls++;return;}
+ st.output_pictures++;
  /* AVC may return the output for an earlier AU. The hardware produces
   * decoded pictures in its display sequence; the caller only schedules
   * presentation after the output exists. */
@@ -682,14 +687,27 @@ void iptvita_preview_tick(void)
   DisplayPicture *p=&pictures[picture_head];
   uint64_t audio_pts=0;
   int has_audio=p->has_pts && iptvita_audio_clock(&audio_pts);
-  int too_old=has_audio && pts_difference(p->pts,audio_pts)<-18000LL;
+  int64_t av_delta=has_audio?pts_difference(p->pts,audio_pts):0;
+  st.av_offset_ms=has_audio?(int)(av_delta/90):0;
+  /* A 200-ms cut-off with unlimited per-tick drops was discarding even
+   * valid movie frames when the codec ran slightly behind live audio.
+   * Retain the original monotonic-PTS safety check, but permit moderate
+   * A/V lag and limit catch-up to 8 decoded presentations per second.
+   * We never skip an encoded AU needed for H264 reference prediction. */
+  int too_old=has_audio && av_delta< -45000LL &&
+              picture_count>1 &&
+              (!last_catchup_drop_us ||
+               (now>=last_catchup_drop_us &&
+                now-last_catchup_drop_us>=125000ULL));
   int backwards=p->has_pts && last_shown_valid &&
                 pts_difference(p->pts,last_shown_pts)<-4500LL;
-  if(backwards || (too_old && picture_count>1)) {
+  if(backwards || too_old) {
    st.dropped++;
    st.late_pictures++;
+   if(too_old)last_catchup_drop_us=now;
    retire_picture();
-   continue;
+   /* One skip per screen tick; do not clear the complete RGBA queue. */
+   break;
   }
   if(!cadence_due(p,now))break;
   int no_pts=!p->has_pts;
@@ -699,13 +717,20 @@ void iptvita_preview_tick(void)
  }
  /* Measure real pictures presented and codec calls, not the screen capture
   * frame rate. A low OUT with high IN means post-decode timing pressure. */
- if(!fps_window_us){fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;}
+ if(!fps_window_us){
+  fps_window_us=now;
+  fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
+  fps_picture_base=st.output_pictures;fps_drop_base=st.late_pictures;
+ }
  else if(now>=fps_window_us && now-fps_window_us>=1000000ULL) {
   unsigned long long delta=now-fps_window_us;
   st.decode_fps=(unsigned)(((unsigned long long)(st.decode_calls-fps_decode_base)*1000000ULL)/delta);
   st.video_fps=(unsigned)(((unsigned long long)(st.decoded-fps_present_base)*1000000ULL)/delta);
+  st.picture_fps=(unsigned)(((unsigned long long)(st.output_pictures-fps_picture_base)*1000000ULL)/delta);
+  st.drop_fps=(unsigned)(((unsigned long long)(st.late_pictures-fps_drop_base)*1000000ULL)/delta);
   st.video_fps_samples++;
   fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
+  fps_picture_base=st.output_pictures;fps_drop_base=st.late_pictures;
  }
  queue_unlock();
 }
@@ -715,6 +740,7 @@ void iptvita_preview_pause(int on)
  decoder_paused=on?1:0;
  if(!on) {
   last_picture_us=0;
+  last_catchup_drop_us=0;
   due_at=0;
   video_clock_valid=audio_master_active=0;
   previous_pts_valid=0;
