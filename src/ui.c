@@ -578,11 +578,12 @@ void iptvita_ui_render(const IptvitaUi *ui)
             }
             {
                 char cache_line[64];
-                snprintf(cache_line,sizeof(cache_line),"AV %+dms / RAM %uMB / RB %u / REC %u",
+                snprintf(cache_line,sizeof(cache_line),"AV %+dms / RAM %uMB / RB%u REC%u KF%u",
                          v.av_offset_ms,
                          v.free_user_kib/1024u,
                          v.rebuffer_timeouts,
-                         iptvita_stream_auto_restarts());
+                         iptvita_stream_auto_restarts(),
+                         v.live_idr_resyncs);
                 label(25,444,cache_line,2,p.accent);
             }
             label(25,505,ui->stream_paused?
