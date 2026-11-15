@@ -18,6 +18,7 @@ typedef struct {
  unsigned output_pictures,empty_decode_calls,picture_fps,drop_fps;
  unsigned backward_picture_drops,audio_lag_picture_drops;
  unsigned backward_drop_fps,audio_lag_drop_fps;
+ unsigned ui_ticks,ui_fps;
  int av_offset_ms;
  unsigned cadence_ms,cadence_waits;
  int worker_running;
