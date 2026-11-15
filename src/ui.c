@@ -571,10 +571,9 @@ void iptvita_ui_render(const IptvitaUi *ui)
             /* H264 diagnostics: count B pictures and reordered output PTS. */
             {
                 char extra[112];
-                snprintf(extra,sizeof(extra),"FPS I%u P%u E%u / D%u B%u A%u",
-                         v.decode_fps,v.picture_fps,v.video_fps,
-                         v.drop_fps,v.backward_drop_fps,
-                         v.audio_lag_drop_fps);
+                snprintf(extra,sizeof(extra),"FPS I%u P%u E%u UI%u / B%u A%u",
+                         v.decode_fps,v.picture_fps,v.video_fps,v.ui_fps,
+                         v.backward_drop_fps,v.audio_lag_drop_fps);
                 label(615,444,extra,2,p.accent);
             }
             {
