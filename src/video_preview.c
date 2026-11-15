@@ -36,6 +36,7 @@ static unsigned long long last_decoder_us;
 static unsigned long long fps_window_us;
 static unsigned fps_decode_base,fps_present_base;
 static unsigned fps_picture_base,fps_drop_base;
+static unsigned fps_backward_base,fps_lag_base;
 static unsigned long long last_catchup_drop_us;
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
@@ -282,6 +283,7 @@ void iptvita_preview_reset(void)
  decoder_stop=0;decoder_paused=0;last_decoder_us=0;
  fps_window_us=0;fps_decode_base=fps_present_base=0;
  fps_picture_base=fps_drop_base=0;
+ fps_backward_base=fps_lag_base=0;
  last_catchup_drop_us=0;
 }
 int iptvita_preview_start(void)
@@ -689,24 +691,42 @@ void iptvita_preview_tick(void)
   int has_audio=p->has_pts && iptvita_audio_clock(&audio_pts);
   int64_t av_delta=has_audio?pts_difference(p->pts,audio_pts):0;
   st.av_offset_ms=has_audio?(int)(av_delta/90):0;
-  /* A 200-ms cut-off with unlimited per-tick drops was discarding even
-   * valid movie frames when the codec ran slightly behind live audio.
-   * Retain the original monotonic-PTS safety check, but permit moderate
-   * A/V lag and limit catch-up to 8 decoded presentations per second.
-   * We never skip an encoded AU needed for H264 reference prediction. */
-  int too_old=has_audio && av_delta< -45000LL &&
-              picture_count>1 &&
+  /* Compare with the NEXT READY picture, not just the audio clock.
+   * The VitaIPTV reference found that removing frames when the decoder
+   * is already near its throughput limit only makes live motion worse:
+   * the next presentation is not ready any sooner. Require substantial
+   * (>900ms) lag AND a newer frame that is also late. */
+  unsigned natural_fps=frame_interval_us?
+                       1000000u/frame_interval_us:30u;
+  int decoder_limited=st.picture_fps && natural_fps &&
+      st.picture_fps*100u<natural_fps*85u;
+  int later_ready_and_late=0;
+  if(has_audio && picture_count>1 && picture_capacity) {
+   DisplayPicture *next=&pictures[(picture_head+1)%picture_capacity];
+   if(next->has_pts) {
+    int64_t advance=pts_difference(next->pts,p->pts);
+    int64_t next_delta=pts_difference(next->pts,audio_pts);
+    later_ready_and_late=advance>0 && advance<18000LL &&
+                         next_delta< -18000LL;
+   }
+  }
+  int too_old=has_audio && av_delta< -81000LL &&
+              later_ready_and_late && !decoder_limited &&
               (!last_catchup_drop_us ||
                (now>=last_catchup_drop_us &&
-                now-last_catchup_drop_us>=125000ULL));
+                now-last_catchup_drop_us>=400000ULL));
   int backwards=p->has_pts && last_shown_valid &&
                 pts_difference(p->pts,last_shown_pts)<-4500LL;
   if(backwards || too_old) {
    st.dropped++;
    st.late_pictures++;
-   if(too_old)last_catchup_drop_us=now;
+   if(backwards)st.backward_picture_drops++;
+   else {
+    st.audio_lag_picture_drops++;
+    last_catchup_drop_us=now;
+   }
    retire_picture();
-   /* One skip per screen tick; do not clear the complete RGBA queue. */
+   /* Never discard the whole RGBA queue in a single UI tick. */
    break;
   }
   if(!cadence_due(p,now))break;
@@ -721,6 +741,8 @@ void iptvita_preview_tick(void)
   fps_window_us=now;
   fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
   fps_picture_base=st.output_pictures;fps_drop_base=st.late_pictures;
+  fps_backward_base=st.backward_picture_drops;
+  fps_lag_base=st.audio_lag_picture_drops;
  }
  else if(now>=fps_window_us && now-fps_window_us>=1000000ULL) {
   unsigned long long delta=now-fps_window_us;
@@ -728,9 +750,13 @@ void iptvita_preview_tick(void)
   st.video_fps=(unsigned)(((unsigned long long)(st.decoded-fps_present_base)*1000000ULL)/delta);
   st.picture_fps=(unsigned)(((unsigned long long)(st.output_pictures-fps_picture_base)*1000000ULL)/delta);
   st.drop_fps=(unsigned)(((unsigned long long)(st.late_pictures-fps_drop_base)*1000000ULL)/delta);
+  st.backward_drop_fps=(unsigned)(((unsigned long long)(st.backward_picture_drops-fps_backward_base)*1000000ULL)/delta);
+  st.audio_lag_drop_fps=(unsigned)(((unsigned long long)(st.audio_lag_picture_drops-fps_lag_base)*1000000ULL)/delta);
   st.video_fps_samples++;
   fps_window_us=now;fps_decode_base=st.decode_calls;fps_present_base=st.decoded;
   fps_picture_base=st.output_pictures;fps_drop_base=st.late_pictures;
+  fps_backward_base=st.backward_picture_drops;
+  fps_lag_base=st.audio_lag_picture_drops;
  }
  queue_unlock();
 }
