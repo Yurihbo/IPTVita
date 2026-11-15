@@ -15,9 +15,13 @@
 #define PREFETCH_PATH "ux0:data/IPTVita/prefetch.ts"
 #define PACKAGED_CA_PATH "app0:cacert.pem"
 #define MAX_BYTES (6u*1024u*1024u)
+/* Large channel catalogs get a separate cap. TS/HLS segment download
+ * sizes stay IDENTICAL to the stable audiovisual Build #434. */
+#define PLAYLIST_MAX_BYTES (16u*1024u*1024u)
 #define PREFETCH_MAX_BYTES (4u*1024u*1024u)
 static char url_copy[8192];
 static volatile int state;
+static int downloading_playlist;
 static volatile int curl_error;
 static volatile int http_status;
 static int network_ready;
@@ -28,13 +32,13 @@ static char prefetch_url[8192];
 static volatile int prefetch_state;
 static volatile unsigned prefetch_generation;
 static unsigned prefetch_hits;
-typedef struct {SceUID fd;size_t total;int failed;} Download;
+typedef struct {SceUID fd;size_t total;int failed;size_t max_bytes;} Download;
 static size_t write_file(char *data,size_t size,size_t nmemb,void *userdata)
 {
  Download *d=(Download*)userdata;
  size_t n=size*nmemb;
  if(size && n/size!=nmemb) return 0;
- if(n>MAX_BYTES-d->total) {d->failed=1;return 0;}
+ if(n>d->max_bytes-d->total) {d->failed=1;return 0;}
  int written=sceIoWrite(d->fd,data,(unsigned int)n);
  if(written<0 || (size_t)written!=n) {d->failed=2;return 0;}
  d->total+=n;return n;
@@ -93,6 +97,9 @@ static int download_thread(SceSize args,void *argp)
 {
  (void)args;(void)argp;
  int result=-1;
+ /* This selector is set once before the foreground worker starts. */
+ const size_t download_limit=downloading_playlist?
+                             PLAYLIST_MAX_BYTES:MAX_BYTES;
  if(init_network()<0) {result=-8;goto finish;}
  sceIoMkdir("ux0:data/IPTVita",0777);
  if(strncmp(url_copy,"https://",8)==0) {
@@ -104,14 +111,14 @@ static int download_thread(SceSize args,void *argp)
    sceIoClose(certfd);result=-11;goto finish;
   }
   unsigned char *cert=malloc((size_t)clen+1);
-  unsigned char *body=malloc(MAX_BYTES+1);
+  unsigned char *body=malloc(download_limit+1);
   if(!cert || !body){free(cert);free(body);sceIoClose(certfd);result=-1;goto finish;}
   int nr=sceIoRead(certfd,cert,(unsigned int)clen);
   sceIoClose(certfd);
   if(nr!=(int)clen){free(cert);free(body);result=-11;goto finish;}
   cert[clen]=0;
   int status=0;
-  int bytes=iptvita_tls_get(url_copy,cert,(size_t)clen+1,body,MAX_BYTES,&status);
+  int bytes=iptvita_tls_get(url_copy,cert,(size_t)clen+1,body,download_limit,&status);
   free(cert);
   http_status=status;
   curl_error=bytes<0?bytes:0;
@@ -122,7 +129,7 @@ static int download_thread(SceSize args,void *argp)
     sceIoClose(output);
     result=nw==bytes?2:-9;
    }else result=-9;
-  }else result=-1;
+  }else result=bytes==-9?-3:-1;
   free(body);
   if(result!=2)sceIoRemove(CACHE_PATH);
   goto finish;
@@ -132,7 +139,7 @@ static int download_thread(SceSize args,void *argp)
  if(fd<0) {result=-9;goto finish;}
  CURL *curl=curl_easy_init();
  if(!curl) {sceIoClose(fd);result=-10;goto finish;}
- Download d={fd,0,0};
+ Download d={fd,0,0,download_limit};
  curl_easy_setopt(curl,CURLOPT_URL,url_copy);
  curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,1L);
  curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
@@ -196,10 +203,10 @@ static int copy_prefetched_segment(void)
  if(!ok || copied!=size){sceIoRemove(CACHE_PATH);return -1;}
  return 0;
 }
-int iptvita_network_start(const char *url)
+static int begin_download(const char *url,int playlist)
 {
  if(state==1 || !url)return -1;
- if(prefetch_state==2 && strcmp(url,prefetch_url)==0) {
+ if(!playlist && prefetch_state==2 && strcmp(url,prefetch_url)==0) {
   if(copy_prefetched_segment()==0) {
    prefetch_state=0;
    prefetch_url[0]=0;
@@ -213,6 +220,7 @@ int iptvita_network_start(const char *url)
  if(n<8 || n>=sizeof(url_copy) ||
    (strncmp(url,"https://",8)!=0 && strncmp(url,"http://",7)!=0))return -1;
  memcpy(url_copy,url,n+1);
+ downloading_playlist=playlist?1:0;
  curl_error=0;
  http_status=0;
  state=1;
@@ -220,6 +228,12 @@ int iptvita_network_start(const char *url)
  if(thread<0) {state=-1;return -1;}
  if(sceKernelStartThread(thread,0,NULL)<0) {sceKernelDeleteThread(thread);state=-1;return -1;}
  return 0;
+}
+/* Keep original network_start unchanged for every video segment and key. */
+int iptvita_network_start(const char *url){return begin_download(url,0);}
+int iptvita_network_start_playlist(const char *url)
+{
+ return begin_download(url,1);
 }
 int iptvita_network_state(void) {return state;}
 const char *iptvita_network_cache_path(void) {return CACHE_PATH;}
@@ -267,7 +281,7 @@ static int prefetch_worker(SceSize args,void *argp)
   if(fd>=0) {
    CURL *curl=curl_easy_init();
    if(curl) {
-    Download d={fd,0,0};
+    Download d={fd,0,0,MAX_BYTES};
     curl_easy_setopt(curl,CURLOPT_URL,url);
     curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,1L);
     curl_easy_setopt(curl,CURLOPT_MAXREDIRS,4L);
