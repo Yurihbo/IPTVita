@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "network.h"
 #include "video_preview.h"
+#include "stream_diagnostic.h"
 #include "network.h"
 #include "aac_audio.h"
 #include <vita2d.h>
@@ -577,8 +578,11 @@ void iptvita_ui_render(const IptvitaUi *ui)
             }
             {
                 char cache_line[64];
-                snprintf(cache_line,sizeof(cache_line),"HLS CACHE %u HITS",
-                         iptvita_network_prefetch_hits());
+                snprintf(cache_line,sizeof(cache_line),"HLS %u / LIVRE %uMB / RB %u / REC %u",
+                         iptvita_network_prefetch_hits(),
+                         v.free_user_kib/1024u,
+                         v.rebuffer_timeouts,
+                         iptvita_stream_auto_restarts());
                 label(25,444,cache_line,2,p.accent);
             }
             label(25,505,ui->stream_paused?
