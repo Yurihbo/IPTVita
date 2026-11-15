@@ -70,6 +70,85 @@ static void finish_segment_worker(void)
  segment_done=0;
 }
 static unsigned long long now_us(void) {return (unsigned long long)sceKernelGetProcessTimeWide();}
+/* Long-play watchdog: idle HLS periods and finite video rebuffering must
+ * not require closing the Vita application. The stable output path of
+ * build #391 is left unchanged. */
+#define VIDEO_STALL_US 12000000ULL
+#define VIDEO_START_TIMEOUT_US 22000000ULL
+#define RETUNE_WINDOW_US 120000000ULL
+#define RETUNE_LIMIT 2u
+static unsigned long long last_video_progress_us;
+static unsigned long long recovery_window_us;
+static unsigned last_video_shown;
+static unsigned recovery_attempts;
+static unsigned recovery_total;
+static int watchdog_retuning;
+static void watchdog_reset_progress(int manual)
+{
+ last_video_progress_us=now_us();
+ last_video_shown=0;
+ if(manual) {
+  recovery_attempts=0;
+  recovery_window_us=0;
+  recovery_total=0;
+ }
+}
+unsigned iptvita_stream_auto_restarts(void){return recovery_total;}
+/* Called in idle stage 5 only, after the demux worker has finished. Reset
+ * MPEG-TS, AVC, AAC and HLS sequencing as one unit at the live edge. */
+static int watchdog_recover(IptvitaUi *ui)
+{
+ unsigned long long now=now_us();
+ if(!ui || !ui->stream_source_url[0] || ui->stream_paused)return 0;
+ if(!recovery_window_us || now<recovery_window_us ||
+    now-recovery_window_us>RETUNE_WINDOW_US) {
+  recovery_window_us=now;
+  recovery_attempts=0;
+ }
+ if(recovery_attempts>=RETUNE_LIMIT) {
+  ui->stream_status=-34;
+  ui->stream_stage=-34;
+  return 1;
+ }
+ ++recovery_attempts;
+ ++recovery_total;
+ watchdog_retuning=1;
+ /* iptvita_stream_start by itself does NOT stop the old audio worker. */
+ iptvita_stream_stop(ui);
+ int rc=iptvita_stream_start(ui,ui->stream_source_url);
+ watchdog_retuning=0;
+ if(rc<0) {
+  ui->stream_status=-34;
+  ui->stream_stage=-34;
+ }
+ return 1;
+}
+static int watchdog_check(IptvitaUi *ui,const IptvitaPreviewStats *video)
+{
+ unsigned long long now=now_us();
+ if(!last_video_progress_us) {
+  last_video_progress_us=now;
+  last_video_shown=video->decoded;
+ }
+ if(ui->stream_paused) {
+  last_video_progress_us=now;
+  last_video_shown=video->decoded;
+  return 0;
+ }
+ if(video->decoded!=last_video_shown) {
+  last_video_shown=video->decoded;
+  last_video_progress_us=now;
+  return 0;
+ }
+ /* A genuine stall is several seconds with no pictures presented; a
+  * static anime scene still yields decoded pictures and resets the clock. */
+ unsigned long long timeout=video->decoded?
+                           VIDEO_STALL_US:VIDEO_START_TIMEOUT_US;
+ if(now>=last_video_progress_us && now-last_video_progress_us>=timeout &&
+    (video->decoded || ui->stream_frames>0))
+  return watchdog_recover(ui);
+ return 0;
+}
 static void close_pipeline(void)
 {
  reset_alt_audio();
@@ -104,6 +183,7 @@ int iptvita_stream_start(IptvitaUi *ui,const char *url)
 {
  finish_segment_worker();
  if(!ui || !url || !url[0])return -1;
+ watchdog_reset_progress(!watchdog_retuning);
  iptvita_network_prefetch_clear();
  ui->stream_prefetch_next_url[0]=0;
  ui->stream_prefetch_next_sequence=0;
@@ -409,6 +489,7 @@ void iptvita_stream_poll(IptvitaUi *ui)
  }
  if(ui->stream_stage==5) {
   IptvitaPreviewStats video=iptvita_preview_stats();
+  if(watchdog_check(ui,&video))return;
   if(video.fatal) {
    /* An HD stream may exceed hardware AVC reference limits despite being
     * advertised as 720p. Recover once by retuning the original master
@@ -504,6 +585,7 @@ void iptvita_stream_poll(IptvitaUi *ui)
 
 void iptvita_stream_stop(IptvitaUi *ui)
 {
+ if(!watchdog_retuning)watchdog_reset_progress(1);
  finish_segment_worker();
  iptvita_network_prefetch_clear();
  close_pipeline();

@@ -70,6 +70,9 @@ static unsigned long long queue_big_since;
 static unsigned long long queue_check_at;
 static unsigned long long due_at;
 static int playback_primed;
+/* A live segment can contain fewer pictures than the adaptive target. */
+static unsigned long long rebuffer_since_us;
+#define LIVE_REBUFFER_WAIT_US 4500000ULL
 static unsigned rebuffer_target=REBUFFER_MIN;
 static unsigned long long last_underrun_us;
 static unsigned long long last_target_decay_us;
@@ -251,7 +254,8 @@ void iptvita_preview_reset(void)
  head=tail=0;total_bytes=0;
  queue_count_limit=QUEUE_BASE_COUNT;queue_bytes_limit=QUEUE_BASE_BYTES;
  queue_big_since=queue_check_at=0;
- due_at=0;playback_primed=0;previous_pts_valid=0;previous_pts=0;
+ due_at=0;playback_primed=0;rebuffer_since_us=0;
+ previous_pts_valid=0;previous_pts=0;
  video_clock_valid=audio_master_active=0;video_base_pts=video_base_us=0;
  rebuffer_target=REBUFFER_MIN;last_underrun_us=last_target_decay_us=0;
  saw_picture=0;
@@ -585,6 +589,7 @@ static int avc_worker(SceSize args,void *argp)
      st.buffer_events++;
     }
     playback_primed=0;
+    if(!rebuffer_since_us)rebuffer_since_us=now;
     st.buffering=1;
     st.buffer_target=saw_picture?rebuffer_target:START_FRAMES;
     st.buffer_percent=0;
@@ -594,8 +599,19 @@ static int avc_worker(SceSize args,void *argp)
      st.buffering=1;
      st.buffer_target=goal;
      st.buffer_percent=count>=goal?100:(int)(count*100u/goal);
-     if(count>=goal || total_bytes>=queue_bytes_limit/2) {
+     if(!rebuffer_since_us)rebuffer_since_us=now;
+     int enough=count>=goal || total_bytes>=queue_bytes_limit/2;
+     /* Do not wait forever for 24-72 frames when a live channel arrives in
+      * small segments or its frame rate is low. After a bounded wait and
+      * with compressed AUs already present, resume rather than trapping
+      * those frames in the queue. Keep the normal startup target unchanged. */
+     int timed_out=saw_picture && count>=2 &&
+       now>=rebuffer_since_us &&
+       now-rebuffer_since_us>=LIVE_REBUFFER_WAIT_US;
+     if(enough || timed_out) {
+      if(timed_out && !enough)st.rebuffer_timeouts++;
       playback_primed=1;
+      rebuffer_since_us=0;
       st.buffering=0;
       previous_pts_valid=0;
       video_clock_valid=audio_master_active=0;
@@ -712,6 +728,20 @@ IptvitaPreviewStats iptvita_preview_stats(void)
  IptvitaPreviewStats snapshot=st;
  snapshot.worker_running=worker_enabled && !decoder_stop;
  queue_unlock();
+ /* Sample process memory only every five seconds, never every render tick.
+  * A decreasing pool reading can indicate long-play memory pressure, but
+  * it is not evidence of a leak without comparing several observations. */
+ static unsigned long long sample_at_us;
+ static unsigned cached_free_kib;
+ unsigned long long now=clock_us();
+ if(!sample_at_us || (now>=sample_at_us && now-sample_at_us>=5000000ULL)) {
+  SceKernelFreeMemorySizeInfo info;
+  memset(&info,0,sizeof info);
+  info.size=sizeof info;
+  if(sceKernelGetFreeMemorySize(&info)>=0)cached_free_kib=info.size_user/1024u;
+  sample_at_us=now;
+ }
+ snapshot.free_user_kib=cached_free_kib;
  return snapshot;
 }
 void iptvita_preview_draw(int x,int y,int width,int height,int fill)

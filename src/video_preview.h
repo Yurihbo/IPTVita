@@ -6,6 +6,7 @@ typedef struct {
  int width,height,decode_error;
  unsigned decoded,submitted,keyframes,dropped,recoveries,queued;
  unsigned buffer_events,buffer_target;
+ unsigned rebuffer_timeouts,free_user_kib;
  unsigned b_frames,reordered_pts,late_pictures;
  unsigned hardware_pts,estimated_pts;
  unsigned decode_calls,picture_waits;
