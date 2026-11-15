@@ -39,6 +39,12 @@ static unsigned fps_picture_base,fps_drop_base;
 static unsigned fps_backward_base,fps_lag_base;
 static unsigned fps_ui_base;
 static unsigned long long last_catchup_drop_us;
+static unsigned long long last_live_idr_resync_us;
+static unsigned live_idr_resync_attempts;
+#define LIVE_DRIFT_RESYNC_TICKS (8LL*90000LL)
+#define LIVE_IDR_SEEK_COOLDOWN_US 30000000ULL
+#define LIVE_IDR_SEEK_MAX_ATTEMPTS 2u
+#define LIVE_IDR_SEEK_MIN_SKIP 90u
 static IptvitaPreviewStats st;
 static int wait_for_idr=1, recovery_attempts=0, reference_frames=4;
 static int decoder_fatal;
@@ -291,6 +297,8 @@ void iptvita_preview_reset(void)
  fps_picture_base=fps_drop_base=0;
  fps_backward_base=fps_lag_base=fps_ui_base=0;
  last_catchup_drop_us=0;
+ last_live_idr_resync_us=0;
+ live_idr_resync_attempts=0;
 }
 int iptvita_preview_start(void)
 {
@@ -599,16 +607,79 @@ static int presentation_due(unsigned long long now)
 
 /* The only consumer of the encoded H.264 queue. The renderer is never
  * required to feed the codec, and does not call sceAvcdecDecode. */
+/* If the UI was capped below live stream FPS for a long time, video can
+ * become many SECONDS behind the continuously playing AAC, with hundreds of
+ * compressed AUs queued. Merely enlarging RAM or avoiding picture drops
+ * cannot clear that deficit. Restart on a complete IDR with a timestamp
+ * near the AAC playhead; never skip an isolated P/B reference AU.
+ *
+ * Called ONLY by the AVC thread while holding queue_mutex. No GPU calls.
+ * Returns 1 if decoder state must be reopened before the selected AU. */
+static int live_seek_idr_locked(unsigned long long now)
+{
+ if(!open || !playback_primed || !saw_picture || !last_shown_valid ||
+    decoder_paused || count<150u ||
+    live_idr_resync_attempts>=LIVE_IDR_SEEK_MAX_ATTEMPTS)return 0;
+ if(last_live_idr_resync_us && now>=last_live_idr_resync_us &&
+    now-last_live_idr_resync_us<LIVE_IDR_SEEK_COOLDOWN_US)return 0;
+ uint64_t audio_pts=0;
+ if(!iptvita_audio_clock(&audio_pts))return 0;
+ int64_t skew=pts_difference(last_shown_pts,audio_pts);
+ if(skew> -LIVE_DRIFT_RESYNC_TICKS || skew< -90000LL*120)return 0;
+ /* Preserve at least 24 AUs after the target keyframe to let the AVCDEC
+  * start before the live edge, and choose the latest eligible IDR. */
+ unsigned best=0;
+ int64_t best_offset=-(int64_t)90000LL*10;
+ int found=0;
+ for(unsigned i=LIVE_IDR_SEEK_MIN_SKIP;i+START_FRAMES<count;i++) {
+  EncodedFrame *f=&frames[(head+i)%FRAME_QUEUE];
+  if(!f->key || !f->has_pts)continue;
+  int64_t offset=pts_difference(f->pts,audio_pts);
+  if(offset>= -90000LL*3 && offset<= -4500LL &&
+     (!found || offset>best_offset)) {
+   best=i;best_offset=offset;found=1;
+  }
+ }
+ if(!found)return 0;
+ for(unsigned i=0;i<best;i++) {
+  free(frames[head].data);
+  frames[head].data=NULL;
+  head=(head+1)%FRAME_QUEUE;
+  count--;
+ }
+ /* Recompute byte occupancy from retained AUs for exact accounting.
+  * The old queue target/limit remains unchanged and keeps its safeguards. */
+ total_bytes=0;
+ for(unsigned i=0;i<count;i++)
+  total_bytes+=frames[(head+i)%FRAME_QUEUE].size;
+ st.queued=count;
+ st.queued_bytes=(unsigned)total_bytes;
+ st.live_idr_skipped+=best;
+ st.live_idr_resyncs++;
+ ++live_idr_resync_attempts;
+ last_live_idr_resync_us=now;
+ clear_presentation();
+ video_clock_valid=0;
+ audio_master_active=0;
+ previous_pts_valid=0;
+ due_at=0;
+ st.av_offset_ms=0;
+ st.buffering=0;
+ st.buffer_percent=100;
+ return 1;
+}
 static int avc_worker(SceSize args,void *argp)
 {
  (void)args;(void)argp;
  while(!decoder_stop) {
   EncodedFrame item={0};
   int got=0;
+  int reopened_for_live=0;
   queue_lock();
   unsigned long long now=clock_us();
   if(!decoder_paused && !decoder_fatal &&
      (!picture_capacity || picture_count<picture_capacity)) {
+   reopened_for_live=live_seek_idr_locked(now);
    if(!count && !picture_count) {
     if(playback_primed && saw_picture) {
      if(!last_underrun_us || now-last_underrun_us<15000000ULL) {
@@ -669,6 +740,15 @@ static int avc_worker(SceSize args,void *argp)
    }
   }
   queue_unlock();
+  if(reopened_for_live) {
+   /* Only this worker owns AVCDEC; UI owns only the displayed texture.
+    * Resetting hardware here is safe and preserves the last visible image
+    * until a new IDR is decoded. Audio never pauses or restarts. */
+   if(open)iptvita_avc_close(&dec);
+   open=0;
+   wait_for_idr=1;
+   st.waiting_for_idr=1;
+  }
   if(!got) {
    sceKernelDelayThread(2000);
    continue;
