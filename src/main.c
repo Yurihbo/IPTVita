@@ -73,7 +73,8 @@ int main(void)
         if(ui.browsing && ui.playlist.status==0) {
             int network=iptvita_network_state();
             if(network==2) {
-                iptvita_playlist_load(&ui.playlist,iptvita_network_cache_path());
+                iptvita_playlist_load_remote(&ui.playlist,iptvita_network_cache_path(),
+                                             iptvita_network_requested_url());
                 iptvita_network_reset();
             } else if(network<0) {
                 ui.playlist.status=network==-3?-5:network==-2?-6:-7;
