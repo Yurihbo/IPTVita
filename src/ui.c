@@ -571,15 +571,15 @@ void iptvita_ui_render(const IptvitaUi *ui)
             /* H264 diagnostics: count B pictures and reordered output PTS. */
             {
                 char extra[112];
-                snprintf(extra,sizeof(extra),"FPS DEC %u EXIB %u / CAD %ums / PTS HW %u EST %u",
-                         v.decode_fps,v.video_fps,v.cadence_ms,
-                         v.hardware_pts,v.estimated_pts);
+                snprintf(extra,sizeof(extra),"FPS IN %u PIC %u EXIB %u / DESC %u",
+                         v.decode_fps,v.picture_fps,v.video_fps,
+                         v.drop_fps);
                 label(615,444,extra,2,p.accent);
             }
             {
                 char cache_line[64];
-                snprintf(cache_line,sizeof(cache_line),"HLS %u / LIVRE %uMB / RB %u / REC %u",
-                         iptvita_network_prefetch_hits(),
+                snprintf(cache_line,sizeof(cache_line),"AV %+dms / RAM %uMB / RB %u / REC %u",
+                         v.av_offset_ms,
                          v.free_user_kib/1024u,
                          v.rebuffer_timeouts,
                          iptvita_stream_auto_restarts());
