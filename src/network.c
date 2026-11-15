@@ -237,6 +237,9 @@ int iptvita_network_start_playlist(const char *url)
 }
 int iptvita_network_state(void) {return state;}
 const char *iptvita_network_cache_path(void) {return CACHE_PATH;}
+/* The original requested playlist URL is needed to resolve entries with
+ * relative paths, since the downloaded file itself lives in ux0:. */
+const char *iptvita_network_requested_url(void){return url_copy;}
 void iptvita_network_reset(void) {if(state!=1)state=0;}
 
 int iptvita_network_error_code(void) {return curl_error;}
