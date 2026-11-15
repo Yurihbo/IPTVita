@@ -10,6 +10,7 @@ int iptvita_network_state(void);
 int iptvita_network_error_code(void);
 int iptvita_network_http_status(void);
 const char *iptvita_network_cache_path(void);
+const char *iptvita_network_requested_url(void);
 void iptvita_network_reset(void);
 /* One optional, independent segment cache: never writes online.m3u while
  * the demux worker is reading it. A match is consumed transparently by
