@@ -49,6 +49,19 @@ static void begin_edit(IptvitaUi *ui, int index, int type)
 static void finish_edit(IptvitaUi *ui)
 {
     if(!ui->draft.name[0] || !ui->draft.url[0]) { ui->save_status=2; return; }
+    /* M3U providers frequently give users a host/path without https://.
+     * Normalize the source ADDRESS only; never rewrite channel URLs or
+     * touch the decoder, audio clocks, or playback configuration. */
+    if(ui->draft.type==0 &&
+       strncmp(ui->draft.url,"http://",7)!=0 &&
+       strncmp(ui->draft.url,"https://",8)!=0 &&
+       strncmp(ui->draft.url,"ux0:",4)!=0 &&
+       !strstr(ui->draft.url,"://")) {
+        size_t n=strlen(ui->draft.url);
+        if(n+8>=sizeof(ui->draft.url)) {ui->save_status=7;return;}
+        memmove(ui->draft.url+8,ui->draft.url,n+1);
+        memcpy(ui->draft.url,"https://",8);
+    }
     if(ui->edit_index>=0) {
         ui->sources.items[ui->edit_index]=ui->draft;
     } else if(iptvita_sources_add(&ui->sources,&ui->draft)<0) {
@@ -173,15 +186,25 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             ui->save_status=0;
             const IptvitaSource *source=&ui->sources.items[ui->source_index];
             const char *url=source->url;
-            int remote=strncmp(url,"https://",8)==0 || strncmp(url,"http://",7)==0;
             if(strncmp(url,"ux0:",4)==0) {
                 iptvita_playlist_load(&ui->playlist,url);
                 ui->browsing=1;
-            } else if(remote && source->type!=1) {
-                /* Recognize online M3U by address, including older saved source types. */
-                if(iptvita_network_start(url)==0) {
+            } else if(source->type!=1) {
+                /* Also support older saved M3U links without a scheme. */
+                char full_url[IPTVITA_URL_MAX];
+                const char *remote=url;
+                if(strncmp(url,"https://",8)!=0 &&
+                   strncmp(url,"http://",7)!=0 && !strstr(url,"://")) {
+                    if(snprintf(full_url,sizeof(full_url),"https://%s",url)>=
+                       (int)sizeof(full_url)) {
+                        ui->save_status=7;
+                        return 0;
+                    }
+                    remote=full_url;
+                }
+                if(iptvita_network_start_playlist(remote)==0) {
+                    iptvita_playlist_clear(&ui->playlist);
                     ui->browsing=1;
-                    ui->playlist.count=0;
                     ui->playlist.status=0;
                 } else ui->save_status=7;
             } else ui->save_status=6;

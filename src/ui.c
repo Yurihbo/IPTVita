@@ -288,8 +288,9 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         const char *pt=ui->playlist.status==-1?"ERRO AO LER ARQUIVO":
             ui->playlist.status==-2?"M3U INVALIDA OU VAZIA":
             ui->playlist.status==-4?"CAMINHO LOCAL INVALIDO":
-            ui->playlist.status==-13?"URL M3U EXCEDE 8191 CARACTERES":
-            ui->playlist.status==-5?"PLAYLIST MAIOR QUE 4 MB":
+            ui->playlist.status==-13?"URL M3U MUITO LONGA":
+            ui->playlist.status==-14?"MEMORIA INSUFICIENTE":
+            ui->playlist.status==-5?"PLAYLIST MAIOR QUE 16 MB":
             ui->playlist.status==-6?"ERRO HTTP DO SERVIDOR":
             ui->playlist.status==-7?"FALHA DE REDE OU HTTPS":
             ui->playlist.status==-8?"ERRO AO INICIAR REDE":
@@ -300,8 +301,9 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         const char *en=ui->playlist.status==-1?"FILE READ ERROR":
             ui->playlist.status==-2?"INVALID OR EMPTY M3U":
             ui->playlist.status==-4?"INVALID LOCAL PATH":
-            ui->playlist.status==-13?"M3U URL EXCEEDS 8191 CHARACTERS":
-            ui->playlist.status==-5?"PLAYLIST EXCEEDS 4 MB":
+            ui->playlist.status==-13?"M3U URL TOO LONG":
+            ui->playlist.status==-14?"INSUFFICIENT MEMORY":
+            ui->playlist.status==-5?"PLAYLIST EXCEEDS 16 MB":
             ui->playlist.status==-6?"HTTP SERVER ERROR":
             ui->playlist.status==-7?"NETWORK OR HTTPS ERROR":
             ui->playlist.status==-8?"NETWORK INITIALIZATION ERROR":

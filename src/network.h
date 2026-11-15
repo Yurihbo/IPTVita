@@ -3,10 +3,14 @@
 /* Download is performed in a worker thread. State: 0 idle, 1 running,
    2 success, -1 network/init error, -2 HTTP error, -3 too large. */
 int iptvita_network_start(const char *url);
+/* Playlist-only download uses a larger file cap; HLS media still uses
+ * iptvita_network_start() with the original segment limits. */
+int iptvita_network_start_playlist(const char *url);
 int iptvita_network_state(void);
 int iptvita_network_error_code(void);
 int iptvita_network_http_status(void);
 const char *iptvita_network_cache_path(void);
+const char *iptvita_network_requested_url(void);
 void iptvita_network_reset(void);
 /* One optional, independent segment cache: never writes online.m3u while
  * the demux worker is reading it. A match is consumed transparently by
