@@ -362,7 +362,7 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         if(active)rect(252,y,4,39,p.accent);
         clipped(267,y+10,ch->name,37,2,p.white);
         if(ui->source_index>=0 && ui->source_index<(int)ui->sources.count &&
-           ch->url && iptvita_favorites_has(ui->sources.items[ui->source_index].url,ch->url))
+           ch->url && iptvita_favorites_has(ui->sources.items[ui->source_index].url,ch))
             label(666,y+10,"FAV",2,p.accent);
         clipped(761,y+10,ch->group,13,2,p.muted);
     }
@@ -660,7 +660,7 @@ void iptvita_ui_render(const IptvitaUi *ui)
                         label(560,480,tr(ui,"ERRO AO SALVAR FAVORITO","FAVORITE SAVE ERROR"),2,p.accent);
                     else if(ui->source_index>=0 && ui->source_index<(int)ui->sources.count &&
                             ch->url && iptvita_favorites_has(
-                            ui->sources.items[ui->source_index].url,ch->url))
+                            ui->sources.items[ui->source_index].url,ch))
                         label(760,480,tr(ui,"FAVORITO","FAVORITE"),2,p.accent);
                 }
                 hint_button(25,510,HINT_LEFT,tr(ui,"ANTERIOR","PREVIOUS"),p);
