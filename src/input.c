@@ -5,6 +5,8 @@
 #include "stream_diagnostic.h"
 #include "aac_audio.h"
 #include "video_preview.h"
+#include "favorites.h"
+#include <psp2/kernel/processmgr.h>
 #include <psp2/ctrl.h>
 #include <string.h>
 #include <stdio.h>
@@ -73,6 +75,70 @@ static void finish_edit(IptvitaUi *ui)
     ui->list_index=(int)ui->sources.count-1;
     if(ui->edit_index>=0) ui->list_index=ui->edit_index;
 }
+/* Selection is always an index into the ORIGINAL M3U list. The compact
+ * favorites view is only a navigation filter, never another stream source. */
+static int favorite_position(const IptvitaUi *ui,int channel)
+{
+    for(int i=0;i<ui->favorite_count;i++)
+        if(ui->favorite_channel_indices[i]==channel)return i;
+    return -1;
+}
+static int next_channel(const IptvitaUi *ui,int direction)
+{
+    if(ui->playlist.count<=0 || ui->playlist.status!=1)return -1;
+    if(ui->favorites_only) {
+        if(ui->favorite_count<=0)return -1;
+        int pos=favorite_position(ui,ui->channel_index);
+        if(pos<0)return ui->favorite_channel_indices[
+            direction>=0?0:ui->favorite_count-1];
+        int next=(pos+direction+ui->favorite_count)%ui->favorite_count;
+        return ui->favorite_channel_indices[next];
+    }
+    return (ui->channel_index+direction+ui->playlist.count)%ui->playlist.count;
+}
+static void tune_channel(IptvitaUi *ui,int channel)
+{
+    if(ui->playlist.status!=1 || channel<0 ||
+       channel>=ui->playlist.count)return;
+    const char *url=ui->playlist.channels[channel].url;
+    if(!url || !url[0])return;
+    /* The active network worker, audio thread and decoder must finish
+     * BEFORE opening a new channel. Never start two HLS streams at once. */
+    if(ui->channel_details)iptvita_stream_stop(ui);
+    ui->channel_index=channel;
+    ui->channel_details=1;
+    ui->player_probe_result=0;
+    ui->player_probe_target=0;
+    ui->stream_stage=0;
+    ui->stream_quality_sd=0;
+    ui->stream_hd_fallback_used=0;
+    snprintf(ui->stream_source_url,sizeof(ui->stream_source_url),"%s",url);
+    ui->channel_hint_until_us=
+      (unsigned long long)sceKernelGetProcessTimeWide()+3500000ULL;
+    iptvita_stream_start(ui,ui->stream_source_url);
+}
+static void toggle_channel_favorite(IptvitaUi *ui)
+{
+    if(ui->source_index<0 || ui->source_index>=(int)ui->sources.count ||
+       ui->playlist.status!=1 || ui->channel_index<0 ||
+       ui->channel_index>=ui->playlist.count)return;
+    const char *url=ui->playlist.channels[ui->channel_index].url;
+    const char *source=ui->sources.items[ui->source_index].url;
+    if(!url || !url[0])return;
+    int result=iptvita_favorites_toggle(source,url);
+    ui->favorite_notice=result<0?-1:result?1:2;
+    if(result>=0)iptvita_favorites_rebuild(ui);
+    ui->channel_hint_until_us=
+      (unsigned long long)sceKernelGetProcessTimeWide()+3500000ULL;
+}
+static void select_favorites_view(IptvitaUi *ui)
+{
+    ui->favorites_only=!ui->favorites_only;
+    ui->favorite_notice=0;
+    if(ui->favorites_only && ui->favorite_count>0 &&
+       favorite_position(ui,ui->channel_index)<0)
+        ui->channel_index=ui->favorite_channel_indices[0];
+}
 static void editor_input(IptvitaUi *ui,unsigned int pressed)
 {
     if(pressed&SCE_CTRL_CIRCLE) { ui->editing=0; ui->save_status=0; return; }
@@ -131,8 +197,39 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
         return 0;
     }
     if(ui->browsing) {
-        if(pressed&SCE_CTRL_CIRCLE) {if(ui->channel_details) {iptvita_stream_stop(ui);ui->channel_details=0;}else ui->browsing=0;return 0;}
+        if(pressed&SCE_CTRL_CIRCLE) {
+            if(ui->channel_details) {
+                iptvita_stream_stop(ui);
+                ui->channel_details=0;
+            }else ui->browsing=0;
+            return 0;
+        }
         if(ui->channel_details) {
+            /* Zapping is strictly menu/input plumbing. The underlying
+             * player is reopened unchanged through its existing API. */
+            if(pressed&SCE_CTRL_LEFT) {
+                int next=next_channel(ui,-1);
+                if(next>=0 && next!=ui->channel_index)tune_channel(ui,next);
+                return 0;
+            }
+            if(pressed&SCE_CTRL_RIGHT) {
+                int next=next_channel(ui,1);
+                if(next>=0 && next!=ui->channel_index)tune_channel(ui,next);
+                return 0;
+            }
+            if(pressed&SCE_CTRL_START) {
+                toggle_channel_favorite(ui);
+                return 0;
+            }
+            if(pressed&SCE_CTRL_SELECT) {
+                iptvita_stream_stop(ui);
+                ui->channel_details=0;
+                ui->favorites_only=1;
+                if(ui->favorite_count>0 &&
+                   favorite_position(ui,ui->channel_index)<0)
+                    ui->channel_index=ui->favorite_channel_indices[0];
+                return 0;
+            }
             if((pressed&SCE_CTRL_CROSS) && ui->stream_stage>=1 && ui->stream_stage<=6) {
                 ui->stream_paused=!ui->stream_paused;
                 iptvita_audio_pause(ui->stream_paused);
@@ -140,10 +237,10 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             }
             if(pressed&SCE_CTRL_RTRIGGER) ui->stream_info_visible=!ui->stream_info_visible;
             if(pressed&SCE_CTRL_LTRIGGER) ui->stream_fill_screen=!ui->stream_fill_screen;
-            if((pressed&SCE_CTRL_TRIANGLE) && ui->playlist.count>0)
-                {ui->player_probe_target=0;
-                ui->player_probe_result=0;
-                iptvita_stream_start(ui,ui->playlist.channels[ui->channel_index].url);}
+            if((pressed&SCE_CTRL_TRIANGLE) && ui->playlist.count>0) {
+                int current=ui->channel_index;
+                tune_channel(ui,current);
+            }
             if(pressed&SCE_CTRL_SQUARE) {
                 ui->stream_stage=0;
                 ui->stream_status=0;
@@ -152,20 +249,29 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             }
             return 0;
         }
-        if((pressed&SCE_CTRL_UP) && ui->channel_index>0) --ui->channel_index;
-        if((pressed&SCE_CTRL_DOWN) && ui->channel_index+1<ui->playlist.count) ++ui->channel_index;
-        if((pressed&SCE_CTRL_CROSS) && ui->playlist.count>0) {
-            ui->channel_details=1;
-            ui->stream_info_visible=0;
-            ui->stream_fill_screen=1;
-            ui->player_probe_result=0;
-            ui->player_probe_target=0;
-            ui->stream_stage=0;
-            ui->stream_quality_sd=0;
-            ui->stream_hd_fallback_used=0;
-            snprintf(ui->stream_source_url,sizeof(ui->stream_source_url),"%s",
-                     ui->playlist.channels[ui->channel_index].url);
-            iptvita_stream_start(ui,ui->stream_source_url);
+        if(pressed&SCE_CTRL_SELECT) {select_favorites_view(ui);return 0;}
+        if(pressed&SCE_CTRL_START) {
+            if(!ui->favorites_only || ui->favorite_count)
+                toggle_channel_favorite(ui);
+            if(ui->favorites_only && ui->favorite_count &&
+               favorite_position(ui,ui->channel_index)<0)
+                ui->channel_index=ui->favorite_channel_indices[0];
+            return 0;
+        }
+        if(pressed&SCE_CTRL_UP) {
+            int next=next_channel(ui,-1);
+            if(next>=0)ui->channel_index=next;
+        }
+        if(pressed&SCE_CTRL_DOWN) {
+            int next=next_channel(ui,1);
+            if(next>=0)ui->channel_index=next;
+        }
+        if(pressed&SCE_CTRL_CROSS) {
+            if(!ui->favorites_only || ui->favorite_count) {
+                ui->stream_info_visible=0;
+                ui->stream_fill_screen=1;
+                tune_channel(ui,ui->channel_index);
+            }
         }
         return 0;
     }
@@ -183,11 +289,15 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             ui->source_index=ui->list_index;
             ui->channel_index=0;
             ui->channel_details=0;
+            ui->favorites_only=0;
+            ui->favorite_count=0;
+            ui->favorite_notice=0;
             ui->save_status=0;
             const IptvitaSource *source=&ui->sources.items[ui->source_index];
             const char *url=source->url;
             if(strncmp(url,"ux0:",4)==0) {
                 iptvita_playlist_load(&ui->playlist,url);
+                iptvita_favorites_rebuild(ui);
                 ui->browsing=1;
             } else if(source->type!=1) {
                 /* Also support older saved M3U links without a scheme. */
