@@ -1,20 +1,22 @@
-<div align="center">
+<h1 align="center">📺 IPTVita</h1>
 
-# 📺 IPTVita
+<p align="center">
+  <strong>IPTV no PlayStation Vita e PlayStation TV</strong><br>
+  <em>An independent IPTV player for PS Vita &amp; PS TV.</em>
+</p>
 
-**IPTV no PlayStation Vita e PlayStation TV**  
-*An independent IPTV player for PS Vita & PS TV.*
+<p align="center">
+  <img alt="PlayStation Vita and TV" src="https://img.shields.io/badge/PlayStation-Vita%20%7C%20TV-123A68?style=for-the-badge">
+  <img alt="M3U and M3U8" src="https://img.shields.io/badge/Listas-M3U%20%2F%20M3U8-00A7C8?style=for-the-badge">
+  <img alt="VitaSDK" src="https://img.shields.io/badge/Feito%20com-VitaSDK-234B7B?style=for-the-badge">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/Licen%C3%A7a-MIT-22A06B?style=for-the-badge"></a>
+</p>
 
-![PlayStation Vita](https://img.shields.io/badge/PlayStation-Vita%20%7C%20TV-123A68?style=for-the-badge)
-![M3U / M3U8](https://img.shields.io/badge/Listas-M3U%20%2F%20M3U8-00A7C8?style=for-the-badge)
-![VitaSDK](https://img.shields.io/badge/Feito%20com-VitaSDK-234B7B?style=for-the-badge)
-[![MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-22A06B?style=for-the-badge)](LICENSE)
-
-**[⬇️ Baixar VPK experimental](https://github.com/Yurihbo/IPTVita/actions/runs/43779272318/artifacts/14187583067)** ·
-**[🛠️ Compilações](https://github.com/Yurihbo/IPTVita/actions)** ·
-**[💻 Código experimental](https://github.com/Yurihbo/IPTVita/tree/feature/channel-zap-playlist-favorites-20261115)**
-
-</div>
+<p align="center">
+  <a href="https://github.com/Yurihbo/IPTVita/actions/runs/43779272318/artifacts/14187583067"><strong>⬇️ Baixar VPK experimental</strong></a> ·
+  <a href="https://github.com/Yurihbo/IPTVita/actions">🛠️ Compilações</a> ·
+  <a href="https://github.com/Yurihbo/IPTVita/tree/feature/channel-zap-playlist-favorites-20261115">💻 Código experimental</a>
+</p>
 
 ---
 
