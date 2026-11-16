@@ -1,88 +1,120 @@
-# IPTVita
+<div align="center">
 
-A new, independent IPTV player for PlayStation Vita and PlayStation TV.
+# 📺 IPTVita
 
-**Author:** Yurihbo  
-**Status:** Stage 3 — local source manager (`v0.3.0`)
+**IPTV no PlayStation Vita e PlayStation TV**  
+*An independent IPTV player for PS Vita & PS TV.*
 
-IPTVita is being developed from new source code in C with VitaSDK. It does not include the source code or assets of Vita IPTV. The other application is used as a functional and technical reference only.
+![PlayStation Vita](https://img.shields.io/badge/PlayStation-Vita%20%7C%20TV-123A68?style=for-the-badge)
+![M3U / M3U8](https://img.shields.io/badge/Listas-M3U%20%2F%20M3U8-00A7C8?style=for-the-badge)
+![VitaSDK](https://img.shields.io/badge/Feito%20com-VitaSDK-234B7B?style=for-the-badge)
+[![MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-22A06B?style=for-the-badge)](LICENSE)
 
-## Stage 1
+**[⬇️ Baixar VPK experimental](https://github.com/Yurihbo/IPTVita/actions/runs/43779272318/artifacts/14187583067)** ·
+**[🛠️ Compilações](https://github.com/Yurihbo/IPTVita/actions)** ·
+**[💻 Código experimental](https://github.com/Yurihbo/IPTVita/tree/feature/channel-zap-playlist-favorites-20261115)**
 
-- Original dark-blue user interface, optimized for the Vita's 960 × 544 display; home, sources, settings and about screens with three themes.
-- D-pad navigation, Cross/Circle, L/R page switching, START exit confirmation.
-- Placeholder entries for M3U/M3U8 URLs, Xtream Codes, local M3U files and direct stream links.
-- Independent application identifier `IPTVI0001` and data directory `ux0:data/IPTVita/` (reserved for later stages).
-- Automated GitHub Actions build publishing `IPTVita.vpk` as an artifact.
+</div>
 
-**Important:** Stage 2 adds navigable menus and themes, but it is **not a media player yet**. Playback, HTTPS/HLS AES-128, Pluto TV playlists, buffering and caching will be developed and tested separately in later stages. No playlist URLs or user credentials are bundled.
+---
 
-## Build
+O **IPTVita**, desenvolvido por **[Yurihbo](https://github.com/Yurihbo)**, é um aplicativo *homebrew* independente para navegar em playlists e assistir a transmissões compatíveis no PS Vita e PS TV. A interface está disponível em português e inglês.
 
-Requires [VitaSDK](https://vitasdk.org/) with the Vita 2D library (`vita2d`).
+> [!IMPORTANT]
+> **Versão experimental:** os recursos e atalhos descritos abaixo correspondem à **Build #464 (PR #31)**. Seu código está na branch experimental indicada; a branch padrão **main** ainda não contém todas essas melhorias. O aplicativo continua em testes no console. Estar listado numa playlist **não garante** que um stream seja compatível.
 
-```sh
-mkdir build && cd build
-cmake ..
-make -j4
-```
+<table>
+  <tr><th align="left">🇧🇷 PORTUGUÊS — Como começar</th></tr>
+  <tr><td>
+    <p><strong>Instale, adicione uma lista e escolha um canal:</strong></p>
+    <ol>
+      <li>Abra <a href="https://github.com/Yurihbo/IPTVita/actions/runs/43779272318/artifacts/14187583067">Baixar VPK experimental</a>, extraia o ZIP e transfira o arquivo <code>IPTVita.vpk</code> para o PS Vita.</li>
+      <li>Instale o VPK pelo <strong>VitaShell</strong> em um console preparado para aplicativos homebrew.</li>
+      <li>No IPTVita, entre em <strong>Fontes → M3U / M3U8</strong>, informe o <strong>nome</strong> e a <strong>URL da playlist</strong>, e pressione <strong>△</strong> para salvar.</li>
+      <li>Em Fontes, pressione <strong>SELECT</strong> para acessar a lista de fontes salvas. Abra sua lista com <strong>✕</strong> e escolha um canal com <strong>✕</strong>.</li>
+    </ol>
+    <p><strong>🎮 Controles durante a reprodução:</strong> <strong>← / →</strong> canal anterior/próximo · <strong>✕</strong> pausar/continuar · <strong>R1</strong> informações · <strong>START</strong> favoritar/desfavoritar · <strong>SELECT</strong> lista de favoritos · <strong>○</strong> voltar.</p>
+    <p><strong>⭐ Favoritos:</strong> ficam salvos no cartão e separados por playlist. Na lista de canais, <strong>SELECT</strong> alterna entre todos os canais e os favoritos.</p>
+    <p><strong>📡 Precisa de uma playlist?</strong> Há um exemplo gratuito da Pluto TV Brasil mais abaixo.</p>
+  </td></tr>
+</table>
 
-Output: `build/IPTVita.vpk`.
+<table>
+  <tr><th align="left">🇺🇸 ENGLISH — Quick start</th></tr>
+  <tr><td>
+    <p><strong>Install the app, add a playlist, and pick a channel:</strong></p>
+    <ol>
+      <li>Open <a href="https://github.com/Yurihbo/IPTVita/actions/runs/43779272318/artifacts/14187583067">Download experimental VPK</a>, extract the ZIP, and transfer <code>IPTVita.vpk</code> to your PS Vita.</li>
+      <li>Install the VPK using <strong>VitaShell</strong> on a console configured to run homebrew applications.</li>
+      <li>In IPTVita, open <strong>Sources → M3U / M3U8</strong>, enter a <strong>name</strong> and the <strong>playlist URL</strong>, then press <strong>△</strong> to save.</li>
+      <li>On the Sources screen, press <strong>SELECT</strong> to show saved sources. Open the playlist with <strong>✕</strong> and select a channel with <strong>✕</strong>.</li>
+    </ol>
+    <p><strong>🎮 Playback controls:</strong> <strong>← / →</strong> previous/next channel · <strong>✕</strong> pause/resume · <strong>R1</strong> information · <strong>START</strong> add/remove favorite · <strong>SELECT</strong> favorites list · <strong>○</strong> back.</p>
+    <p><strong>⭐ Favorites:</strong> saved locally and kept separately for each playlist. In the channel browser, <strong>SELECT</strong> toggles between all channels and favorites.</p>
+    <p><strong>📡 Need a playlist?</strong> See the free Pluto TV Brazil example below.</p>
+  </td></tr>
+</table>
 
-On GitHub, open **Actions → Build IPTVita VPK → latest successful run → Artifacts → IPTVita-vpk**, extract the ZIP and install the VPK through VitaShell.
+## 📡 Playlist de exemplo / Example playlist — Pluto TV Brasil
 
-## Roadmap
+A lista é gerada pelo projeto separado **[Yurihbo/pluto-tv-playlists](https://github.com/Yurihbo/pluto-tv-playlists)**, para quem quiser experimentar o IPTVita.
 
-1. Foundation and first executable VPK.
-2. Complete menus and visual styling.
-3. Playlist sources and local storage.
-4. Networking, HLS, TLS, AES-128.
-5. Hardware playback and audio.
-6. Buffering and performance.
-7. Favorites, EPG, media-library features.
-8. Stability tests and release.
+*The playlist is generated by the separate **[Yurihbo/pluto-tv-playlists](https://github.com/Yurihbo/pluto-tv-playlists)** project as an example for IPTVita users.*
 
-## Copyright
+**📋 URL M3U preparada para Vita / Vita-oriented M3U URL:**
 
-Copyright (c) 2026 Yurihbo. Licensed under the MIT License — see [LICENSE](LICENSE).
+~~~text
+https://raw.githubusercontent.com/Yurihbo/pluto-tv-playlists/main/output/plutotv_br_vita.m3u
+~~~
 
-Third-party components added in future stages will keep their own notices and licenses.
+**[📂 Repositório da playlist / Playlist repository](https://github.com/Yurihbo/pluto-tv-playlists)** ·
+**[🔗 Versão M3U8 Brasil / Brazil M3U8 version](https://raw.githubusercontent.com/Yurihbo/pluto-tv-playlists/main/output/plutotv_br.m3u8)**
 
-## Stage 3 source manager (v0.3)
+> [!NOTE]
+> **Créditos e independência (PT-BR):** a programação, os canais, as marcas e os logotipos da **Pluto TV** pertencem aos seus respectivos titulares. Agradecemos à Pluto TV pela disponibilização de sua programação gratuita. O **IPTVita não é oficial nem afiliado, patrocinado ou endossado pela Pluto TV ou pela Sony/PlayStation**. O aplicativo não hospeda canais nem vídeos. Disponibilidade regional e links de transmissão podem mudar ou expirar.
+>
+> **Credits & independence (EN):** **Pluto TV** channels, content, names and logos belong to their respective owners. Thanks to Pluto TV for making its free programming available. **IPTVita is not an official app, nor is it affiliated with, sponsored by, or endorsed by Pluto TV or Sony/PlayStation.** The app does not host channels or videos. Regional availability and stream URLs may change or expire.
 
-The **Sources** screen offers four source types: M3U/M3U8 URL, Xtream Codes, direct stream URL and local M3U path. Use **X** on a type to create an entry, or **SELECT** to toggle the saved-source list. In the saved list, **X** edits and **Triangle** deletes an entry. The application supports up to 16 entries and URLs up to 4095 characters.
+## ✨ Recursos / Features
 
-The stage-3 editor is a lightweight, controller-operated character grid:
-- D-pad: choose character; X: append; Triangle: backspace
-- L/R: switch fields (Name, URL/Path, and Xtream username/password)
-- Square: save; Circle: cancel
+| 🇧🇷 Português | 🇺🇸 English |
+| --- | --- |
+| Interface azul com português e inglês | Blue-themed UI with Portuguese and English |
+| Listas locais e URLs M3U/M3U8 HTTP(S) | Local playlists and HTTP(S) M3U/M3U8 URLs |
+| Reprodução experimental de HLS compatível, incluindo AES-128 | Experimental playback of compatible HLS, including AES-128 |
+| Troca de canais e favoritos por playlist | Channel zapping and per-playlist favorites |
+| Buffer, informações R1 e sincronização A/V | Buffering, R1 diagnostics and A/V synchronization |
 
-Entries are stored locally in `ux0:data/IPTVita/sources.bin`. No passwords are uploaded by this stage, but Xtream passwords are stored **unencrypted on the memory card**; do not use sensitive passwords. Local file entries are stored as paths, not opened yet. No playlists are fetched or parsed, and **no video playback is included** in stage 3.
+**Limitações / Limitations:** importar uma playlist não garante reproduzir todos os canais. Alguns streams precisam de codecs, autenticação, DRM ou protocolos não suportados. O login **Xtream Codes não está implementado** nessa versão experimental. / Importing a playlist does not guarantee playback of every channel. Some streams require unsupported codecs, authentication, DRM or protocols. **Xtream Codes login is not implemented** in this experimental version.
 
-### Planned favorites behavior
-When video playback is implemented, **START while watching a channel** will toggle its favorite status. Each playlist will have its own **Favorites** tab, with favorites stored by source identity and channel identity. START in menus retains the exit confirmation; playback will have its own controller context. This is planned, not yet implemented.
+## 🧰 Compilação / Build from source
 
-## Stage 3.1 usability adjustments
+Requer [VitaSDK](https://vitasdk.org/) e as dependências do projeto. Para compilar os recursos acima, use a **branch experimental** (não a antiga main).
 
-- Triangle saves the source editor; Square erases a character. In the saved-source list, Square deletes the selected entry.
-- The controller character grid now supports touch selection, left analog stick and auto-repeat while holding the D-pad or analog direction.
-- Smaller, lighter pixel text in headings, menus and source cards.
-- The Vita's native on-screen IME keyboard is planned as a further improvement; the current build retains the touch/controller grid. The source list is not yet a channel browser: playback and playlist parsing belong to Stage 4.
+*Requires VitaSDK and project dependencies. To build the features shown above, check out the experimental branch (not the older main branch).*
 
-## Stage 3.2: native keyboard (experimental)
+~~~bash
+git clone https://github.com/Yurihbo/IPTVita.git
+cd IPTVita
+git checkout feature/channel-zap-playlist-favorites-20261115
+mkdir -p assets
+curl -fsSL https://curl.se/ca/cacert.pem -o assets/cacert.pem
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel 4
+~~~
 
-Press X while editing a field to open the Vita system keyboard (IME). L/R changes fields; Triangle saves; Circle cancels. SELECT toggles the lightweight on-screen character grid as a fallback; the grid still supports touch, analog stick and held D-pad repeat. The system keyboard accepts at most 2048 UTF-16 characters, so exceptionally long URLs must use the grid. No playback or playlist parsing is implemented yet.
+**Resultado / Output:** <code>build/IPTVita.vpk</code>. Também é possível consultar os builds em [GitHub Actions](https://github.com/Yurihbo/IPTVita/actions). Artefatos do Actions podem expirar; nesse caso, consulte uma compilação bem-sucedida mais recente.
 
-Native IME behavior must be tested on real Vita hardware. The app keeps the custom grid if native keyboard initialization fails. Existing saved sources use the same file format and remain compatible.
+## 🤝 Comunidade e créditos / Community & credits
 
-## Stage 4.0 — M3U channel browser (first milestone)
+Criado e mantido por **[Yurihbo](https://github.com/Yurihbo)**. Ideias, bugs e contribuições são bem-vindos em [Issues](https://github.com/Yurihbo/IPTVita/issues) e [Pull Requests](https://github.com/Yurihbo/IPTVita/pulls).
 
-The first Stage 4 build parses **local** `#EXTM3U` files from `ux0:` and displays channel names and `group-title` metadata. Add a **Local M3U** source with an absolute path such as `ux0:data/IPTVita/test.m3u`. Open **Sources → SELECT (saved list) → X** to browse its channels; **R** edits the source, **Square** deletes it, and **Circle** returns to saved sources. Up/down scrolls channels, up to 300 entries in this first memory-bounded implementation. It never executes or plays an entry at this stage.
+*Created and maintained by Yurihbo. Suggestions, bug reports and contributions are welcome.*
 
-**Important limitations:** online M3U URLs are saved but cannot be downloaded/opened in v0.4.0. Xtream, HLS playback, and direct-stream playback are not yet implemented. Online playlist fetching is the next Stage 4 milestone, followed by playback and favorites. Local playlists must start with `#EXTM3U`; line lengths over 4095 bytes are ignored. Only files under `ux0:` are accepted for now.
+**Licença / License:** [MIT](LICENSE) — Copyright © 2026 Yurihbo.
 
-## Stage 5.0 — Remote M3U (experimental)
+---
 
-Saved **M3U / M3U8** sources can now be opened directly from HTTP/HTTPS URLs: **Sources → SELECT → X**. A background thread downloads the file to `ux0:data/IPTVita/online.m3u` and the existing M3U parser lists the channels. The UI stays responsive during downloads and reports HTTP, TLS/network, invalid M3U and size errors. Downloads are capped at 4 MiB, limited to 50 seconds, and channel display remains capped at 300. HTTP redirects are limited to four. The shared cache is replaced by each successful download; no offline per-source caching yet.
-
-**HTTPS security:** certificate verification is enabled. Some PS Vita firmware environments may lack a usable CA bundle and reject otherwise valid HTTPS servers; this should be diagnosed on the physical console rather than disabling verification silently. Playback, Xtream login, AES-128 and favorites are not implemented. Do not treat a downloaded M3U as playable video.
+<div align="center">
+  <sub>Feito para a comunidade PS Vita · Made for the PS Vita homebrew community</sub>
+</div>
