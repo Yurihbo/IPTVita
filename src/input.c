@@ -107,6 +107,7 @@ static void tune_channel(IptvitaUi *ui,int channel)
     if(ui->channel_details)iptvita_stream_stop(ui);
     ui->channel_index=channel;
     ui->channel_details=1;
+    ui->favorite_notice=0; /* Don't repeat a previous favorite toast on zap. */
     ui->player_probe_result=0;
     ui->player_probe_target=0;
     ui->stream_stage=0;
