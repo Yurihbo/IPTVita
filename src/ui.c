@@ -4,6 +4,7 @@
 #include "stream_diagnostic.h"
 #include "network.h"
 #include "aac_audio.h"
+#include "favorites.h"
 #include <vita2d.h>
 #include <psp2/kernel/processmgr.h>
 #include <stddef.h>
@@ -142,7 +143,8 @@ static void badge(int x, int y, const char *value, unsigned int fg, unsigned int
 /* Draw recognizable PlayStation button symbols instead of ASCII commands.
  * Purely decorative: controller mappings remain in input.c. */
 enum { HINT_CROSS, HINT_CIRCLE, HINT_SQUARE, HINT_TRIANGLE,
-       HINT_LR, HINT_R, HINT_START, HINT_SELECT };
+       HINT_LR, HINT_R, HINT_START, HINT_SELECT,
+       HINT_LEFT, HINT_RIGHT };
 static void hint_button(int x,int y,int kind,const char *action,Palette p)
 {
     int w=kind==HINT_LR?39:(kind==HINT_START||kind==HINT_SELECT?54:23);
@@ -164,6 +166,14 @@ static void hint_button(int x,int y,int kind,const char *action,Palette p)
         vita2d_draw_line(x+12,y+5,x+5,y+19,color);
         vita2d_draw_line(x+5,y+19,x+19,y+19,color);
         vita2d_draw_line(x+19,y+19,x+12,y+5,color);
+    }else if(kind==HINT_LEFT) {
+        vita2d_draw_line(x+14,y+5,x+6,y+12,color);
+        vita2d_draw_line(x+6,y+12,x+14,y+19,color);
+        vita2d_draw_line(x+6,y+12,x+19,y+12,color);
+    }else if(kind==HINT_RIGHT) {
+        vita2d_draw_line(x+8,y+5,x+17,y+12,color);
+        vita2d_draw_line(x+17,y+12,x+8,y+19,color);
+        vita2d_draw_line(x+4,y+12,x+17,y+12,color);
     }else {
         label(x+5,y+6,kind==HINT_LR?"L/R":
                           kind==HINT_R?"R":
@@ -281,9 +291,14 @@ static void editor(const IptvitaUi *ui, Palette p)
 }
 static void channel_browser(const IptvitaUi *ui, Palette p)
 {
-    heading(ui->page,p,tr(ui,"CANAIS DA PLAYLIST","PLAYLIST CHANNELS"),
-            tr(ui,"CIMA/BAIXO NAVEGAR  /  O VOLTAR","UP/DOWN BROWSE  /  O BACK"));
-    if(ui->playlist.status==0) label(263,150,tr(ui,"BAIXANDO PLAYLIST...","DOWNLOADING PLAYLIST..."),3,p.accent);
+    heading(ui->page,p,ui->favorites_only?
+            tr(ui,"CANAIS FAVORITOS","FAVORITE CHANNELS"):
+            tr(ui,"CANAIS DA PLAYLIST","PLAYLIST CHANNELS"),
+            ui->favorites_only?
+            tr(ui,"SELECT MOSTRA TODOS OS CANAIS","SELECT SHOWS ALL CHANNELS"):
+            tr(ui,"SELECT ABRE A LISTA DE FAVORITOS","SELECT OPENS FAVORITES"));
+    if(ui->playlist.status==0)
+        label(263,150,tr(ui,"BAIXANDO PLAYLIST...","DOWNLOADING PLAYLIST..."),3,p.accent);
     if(ui->playlist.status<0) {
         const char *pt=ui->playlist.status==-1?"ERRO AO LER ARQUIVO":
             ui->playlist.status==-2?"M3U INVALIDA OU VAZIA":
@@ -314,22 +329,55 @@ static void channel_browser(const IptvitaUi *ui, Palette p)
         label(263,150,ui->language?en:pt,3,p.accent);
         if(ui->playlist.status==-7 || ui->playlist.status==-6) {
             char detail[80];
-            snprintf(detail,sizeof(detail),"CURL: %d  HTTP: %d",iptvita_network_error_code(),iptvita_network_http_status());
+            snprintf(detail,sizeof(detail),"CURL: %d  HTTP: %d",
+                     iptvita_network_error_code(),iptvita_network_http_status());
             label(263,195,detail,3,p.white);
         }
     }
-    char count[40];snprintf(count,sizeof(count),"%d CANAIS",ui->playlist.count);
+    char count[64];
+    snprintf(count,sizeof(count),
+             ui->favorites_only?tr(ui,"%d FAVORITOS / %d CANAIS","%d FAVORITES / %d CHANNELS"):
+                                tr(ui,"%d CANAIS / %d FAVORITOS","%d CHANNELS / %d FAVORITES"),
+             ui->favorites_only?ui->favorite_count:ui->playlist.count,
+             ui->favorites_only?ui->playlist.count:ui->favorite_count);
     label(264,117,count,2,p.muted);
-    int offset=ui->channel_index>=7?ui->channel_index-6:0;
-    for(int i=offset;i<ui->playlist.count && i<offset+7;++i) {
-        int y=151+(i-offset)*44;
-        int active=i==ui->channel_index;
+    int selected=ui->channel_index;
+    int visible_count=ui->favorites_only?ui->favorite_count:ui->playlist.count;
+    int selection_pos=selected;
+    if(ui->favorites_only) {
+        selection_pos=0;
+        for(int i=0;i<ui->favorite_count;i++)
+            if(ui->favorite_channel_indices[i]==selected) {
+                selection_pos=i;break;
+            }
+    }
+    int offset=selection_pos>=7?selection_pos-6:0;
+    for(int pos=offset;pos<visible_count && pos<offset+7;++pos) {
+        int i=ui->favorites_only?ui->favorite_channel_indices[pos]:pos;
+        if(i<0 || i>=ui->playlist.count)continue;
+        const IptvitaChannel *ch=&ui->playlist.channels[i];
+        int y=151+(pos-offset)*44;
+        int active=i==selected;
         rect(252,y,672,39,active?p.selected:p.surface);
         if(active)rect(252,y,4,39,p.accent);
-        clipped(267,y+10,ui->playlist.channels[i].name,37,2,p.white);
-        clipped(731,y+10,ui->playlist.channels[i].group,14,2,p.muted);
+        clipped(267,y+10,ch->name,37,2,p.white);
+        if(ui->source_index>=0 && ui->source_index<(int)ui->sources.count &&
+           ch->url && iptvita_favorites_has(ui->sources.items[ui->source_index].url,ch))
+            label(666,y+10,"FAV",2,p.accent);
+        clipped(761,y+10,ch->group,13,2,p.muted);
     }
-    label(253,491,tr(ui,"X DETALHES DO CANAL","X CHANNEL DETAILS"),2,p.muted);
+    if(ui->favorites_only && !visible_count && ui->playlist.status==1)
+        label(267,185,tr(ui,"NENHUM CANAL FAVORITO NESTA FONTE",
+                         "NO FAVORITES SAVED FOR THIS SOURCE"),3,p.muted);
+    if(ui->favorite_notice<0)
+        label(253,457,tr(ui,"ERRO AO SALVAR FAVORITO","FAVORITE SAVE ERROR"),2,p.accent);
+    if(!ui->hide_control_hints) {
+        hint_button(252,487,HINT_CROSS,tr(ui,"ABRIR","OPEN"),p);
+        hint_button(401,487,HINT_START,ui->favorites_only?
+                    tr(ui,"REMOVER","REMOVE"):tr(ui,"FAVORITAR","FAVORITE"),p);
+        hint_button(640,487,HINT_SELECT,ui->favorites_only?
+                    tr(ui,"TODOS","ALL"):tr(ui,"FAVORITOS","FAVORITES"),p);
+    }
     if(ui->channel_details && ui->playlist.count>0) {
         const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
         rect(240,108,700,400,p.bg);
@@ -591,6 +639,35 @@ void iptvita_ui_render(const IptvitaUi *ui)
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
                   tr(ui,"X PAUSAR  R1 INFO  L1 TELA  O VOLTAR","X PAUSE  R1 INFO  L1 SCREEN  O BACK"),2,p.accent);
+            /* Channel navigation always uses the same controller mappings,
+             * regardless of codec, playlist provider or buffer state. */
+            hint_button(25,518,HINT_LEFT,tr(ui,"ANTERIOR","PREVIOUS"),p);
+            hint_button(201,518,HINT_RIGHT,tr(ui,"PROXIMO","NEXT"),p);
+            hint_button(379,518,HINT_START,tr(ui,"FAVORITAR","FAVORITE"),p);
+            hint_button(656,518,HINT_SELECT,tr(ui,"LISTA FAV.","FAV. LIST"),p);
+        }else {
+            unsigned long long now=(unsigned long long)sceKernelGetProcessTimeWide();
+            if(ui->channel_hint_until_us && now<ui->channel_hint_until_us) {
+                rect(0,470,IPTVITA_WIDTH,74,RGBA8(8,20,33,224));
+                if(ui->channel_index>=0 && ui->channel_index<ui->playlist.count) {
+                    const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
+                    clipped(25,480,ch->name,45,2,p.white);
+                    if(ui->favorite_notice==1)
+                        label(560,480,tr(ui,"ADICIONADO AOS FAVORITOS","ADDED TO FAVORITES"),2,p.accent);
+                    else if(ui->favorite_notice==2)
+                        label(560,480,tr(ui,"REMOVIDO DOS FAVORITOS","REMOVED FROM FAVORITES"),2,p.accent);
+                    else if(ui->favorite_notice<0)
+                        label(560,480,tr(ui,"ERRO AO SALVAR FAVORITO","FAVORITE SAVE ERROR"),2,p.accent);
+                    else if(ui->source_index>=0 && ui->source_index<(int)ui->sources.count &&
+                            ch->url && iptvita_favorites_has(
+                            ui->sources.items[ui->source_index].url,ch))
+                        label(760,480,tr(ui,"FAVORITO","FAVORITE"),2,p.accent);
+                }
+                hint_button(25,510,HINT_LEFT,tr(ui,"ANTERIOR","PREVIOUS"),p);
+                hint_button(201,510,HINT_RIGHT,tr(ui,"PROXIMO","NEXT"),p);
+                hint_button(379,510,HINT_START,tr(ui,"FAVORITAR","FAVORITE"),p);
+                hint_button(656,510,HINT_SELECT,tr(ui,"LISTA FAV.","FAV. LIST"),p);
+            }
         }
         return;
     }

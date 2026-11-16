@@ -25,7 +25,10 @@ static void trim(char *s)
 void iptvita_playlist_clear(IptvitaPlaylist *list)
 {
  if(!list)return;
- for(int i=0;i<list->count;i++)free(list->channels[i].url);
+ for(int i=0;i<list->count;i++) {
+  free(list->channels[i].url);
+  free(list->channels[i].tvg_id);
+ }
  free(list->channels);
  memset(list,0,sizeof(*list));
 }
@@ -41,7 +44,7 @@ static void attribute(const char *line,const char *key,char *out,size_t cap)
  const char *end=strchr(++p,quote);
  if(end)copy(out,cap,p,(size_t)(end-p));
 }
-static void parse_meta(const char *line,char *name,char *group)
+static void parse_meta(const char *line,char *name,char *group,char *tvg_id)
 {
  const char *comma=strrchr(line,',');
  if(comma && comma[1]) {
@@ -50,6 +53,7 @@ static void parse_meta(const char *line,char *name,char *group)
  }
  if(!name[0])attribute(line,"tvg-name=",name,IPTVITA_CHANNEL_NAME);
  attribute(line,"group-title=",group,64);
+ attribute(line,"tvg-id=",tvg_id,96);
 }
 static int http_url(const char *url)
 {
@@ -90,7 +94,7 @@ static int resolve_url(const char *base,const char *entry,
  return n>0 && (size_t)n<cap && http_url(out);
 }
 static int add_channel(IptvitaPlaylist *list,const char *name,
-                       const char *group,const char *url)
+                       const char *group,const char *tvg_id,const char *url)
 {
  if(list->count>=IPTVITA_MAX_CHANNELS) {
   list->truncated=1; /* Do not discard the channels already loaded. */
@@ -108,9 +112,17 @@ static int add_channel(IptvitaPlaylist *list,const char *name,
  char *stored=malloc(n+1);
  if(!stored)return -14;
  memcpy(stored,url,n+1);
+ char *id=NULL;
+ if(tvg_id && tvg_id[0]) {
+  size_t len=strlen(tvg_id);
+  id=malloc(len+1);
+  if(!id){free(stored);return -14;}
+  memcpy(id,tvg_id,len+1);
+ }
  IptvitaChannel *ch=&list->channels[list->count++];
  memset(ch,0,sizeof(*ch));
  ch->url=stored;
+ ch->tvg_id=id;
  if(name && name[0])copy(ch->name,sizeof(ch->name),name,strlen(name));
  else {
   /* No EXTM3U display name: use path tail rather than 8k of query tokens. */
@@ -124,7 +136,7 @@ static int add_channel(IptvitaPlaylist *list,const char *name,
  return 0;
 }
 static int process_line(IptvitaPlaylist *list,char *line,
-                        const char *origin,char *name,char *group,
+                        const char *origin,char *name,char *group,char *tvg_id,
                         int *is_hls,int *invalid_lines)
 {
  trim(line);
@@ -138,8 +150,8 @@ static int process_line(IptvitaPlaylist *list,char *line,
   return 0;
  }
  if(strncmp(line,"#EXTINF:",8)==0) {
-  name[0]=0;group[0]=0;
-  parse_meta(line,name,group);
+  name[0]=0;group[0]=0;tvg_id[0]=0;
+  parse_meta(line,name,group,tvg_id);
   return 0;
  }
  if(strncmp(line,"#EXTGRP:",8)==0) {
@@ -152,11 +164,11 @@ static int process_line(IptvitaPlaylist *list,char *line,
  char url[IPTVITA_CHANNEL_URL];
  if(!resolve_url(origin,line,url,sizeof(url))) {
   (*invalid_lines)++;
-  name[0]=group[0]=0;
+  name[0]=group[0]=tvg_id[0]=0;
   return 0;
  }
- int rc=add_channel(list,name,group,url);
- name[0]=group[0]=0;
+ int rc=add_channel(list,name,group,tvg_id,url);
+ name[0]=group[0]=tvg_id[0]=0;
  return rc;
 }
 static int load_impl(IptvitaPlaylist *list,const char *path,const char *origin)
@@ -173,6 +185,7 @@ static int load_impl(IptvitaPlaylist *list,const char *path,const char *origin)
  char line[IPTVITA_CHANNEL_URL];
  char pending_name[IPTVITA_CHANNEL_NAME]="";
  char pending_group[64]="";
+ char pending_tvg_id[96]="";
  unsigned char chunk[2048];
  size_t used=0;
  int overflow=0,overlong=0,invalid_lines=0,is_hls=0,rc=0,n=0;
@@ -189,7 +202,7 @@ static int load_impl(IptvitaPlaylist *list,const char *path,const char *origin)
    else {
     line[used]=0;
     rc=process_line(list,line,origin,pending_name,pending_group,
-                    &is_hls,&invalid_lines);
+                    pending_tvg_id,&is_hls,&invalid_lines);
     if(rc<0)goto done;
    }
    used=0;
@@ -201,7 +214,7 @@ static int load_impl(IptvitaPlaylist *list,const char *path,const char *origin)
  else if(used) {
   line[used]=0;
   rc=process_line(list,line,origin,pending_name,pending_group,
-                  &is_hls,&invalid_lines);
+                  pending_tvg_id,&is_hls,&invalid_lines);
   if(rc<0)goto done;
  }
  /* A direct HLS master/media M3U8 is one channel, not an IPTV channel
@@ -209,7 +222,7 @@ static int load_impl(IptvitaPlaylist *list,const char *path,const char *origin)
   * processes variant selection and segments without any changes. */
  if(is_hls && origin && http_url(origin)) {
   iptvita_playlist_clear(list);
-  rc=add_channel(list,"HLS AO VIVO","",origin);
+  rc=add_channel(list,"HLS AO VIVO","","",origin);
   if(rc<0)goto done;
  }
 done:

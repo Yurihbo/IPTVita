@@ -33,6 +33,12 @@ typedef struct {
     int browsing;
     int channel_index;
     int channel_details;
+    int channel_tune_pending; /* defer zapping until old HTTP download exits */
+    int favorites_only; /* SELECT toggles saved channels-only browser */
+    int favorite_count; /* cached per loaded playlist */
+    int favorite_channel_indices[IPTVITA_MAX_CHANNELS];
+    int favorite_notice; /* 1 added, 2 removed, negative storage error */
+    unsigned long long channel_hint_until_us;
     int player_probe_result;
     int player_probe_target;
     int stream_paused;
