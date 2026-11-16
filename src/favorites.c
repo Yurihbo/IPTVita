@@ -29,6 +29,28 @@ static uint64_t hash_url(const char *s)
  }
  return h;
 }
+/* Prefer the broadcaster's stable M3U tvg-id; when unavailable, use
+ * channel name + group so rotated CDN query tokens do not erase favorites.
+ * Only anonymous channels fall back to their full URL. */
+static uint64_t channel_hash(const IptvitaChannel *ch)
+{
+ if(!ch)return 0;
+ const char *first=ch->tvg_id && ch->tvg_id[0]?ch->tvg_id:ch->name;
+ const char *second=ch->tvg_id && ch->tvg_id[0]?"":ch->group;
+ const char *tag=ch->tvg_id && ch->tvg_id[0]?"tvg-id:":"name:";
+ if(!first || !*first ||
+    (strcmp(first,"CANAL")==0 && (!second || !*second)))
+  return hash_url(ch->url);
+ uint64_t h=hash_url(tag);
+ for(const char *p=first;*p;p++) {
+  h^=(unsigned char)*p;h*=UINT64_C(1099511628211);
+ }
+ h^=0xffu;h*=UINT64_C(1099511628211);
+ for(const char *p=second;*p;p++) {
+  h^=(unsigned char)*p;h*=UINT64_C(1099511628211);
+ }
+ return h;
+}
 static int lookup(uint64_t source,uint64_t channel)
 {
  for(unsigned i=0;i<entry_count;i++)
@@ -74,17 +96,19 @@ static int persist(void)
  if(sceIoRename(FAVORITES_TEMP,FAVORITES_FILE)<0)return -1;
  return 0;
 }
-int iptvita_favorites_has(const char *source_url,const char *channel_url)
+int iptvita_favorites_has(const char *source_url,const IptvitaChannel *channel)
 {
  iptvita_favorites_load();
- if(!source_url || !channel_url || !*source_url || !*channel_url)return 0;
- return lookup(hash_url(source_url),hash_url(channel_url))>=0;
+ if(!source_url || !channel || !*source_url || !channel->url ||
+    !*channel->url)return 0;
+ return lookup(hash_url(source_url),channel_hash(channel))>=0;
 }
-int iptvita_favorites_toggle(const char *source_url,const char *channel_url)
+int iptvita_favorites_toggle(const char *source_url,const IptvitaChannel *channel)
 {
  iptvita_favorites_load();
- if(!source_url || !channel_url || !*source_url || !*channel_url)return -1;
- Fav key={hash_url(source_url),hash_url(channel_url)};
+ if(!source_url || !channel || !*source_url || !channel->url ||
+    !*channel->url)return -1;
+ Fav key={hash_url(source_url),channel_hash(channel)};
  int found=lookup(key.source_hash,key.channel_hash);
  if(found>=0) {
   unsigned i=(unsigned)found;
@@ -112,8 +136,8 @@ void iptvita_favorites_rebuild(IptvitaUi *ui)
  const char *source=ui->sources.items[ui->source_index].url;
  for(int i=0;i<ui->playlist.count &&
        ui->favorite_count<IPTVITA_MAX_CHANNELS;i++) {
-  const char *url=ui->playlist.channels[i].url;
-  if(url && iptvita_favorites_has(source,url))
+  const IptvitaChannel *ch=&ui->playlist.channels[i];
+  if(ch->url && iptvita_favorites_has(source,ch))
    ui->favorite_channel_indices[ui->favorite_count++]=i;
  }
 }
