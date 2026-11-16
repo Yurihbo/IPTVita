@@ -4,6 +4,7 @@
 #include "network.h"
 #include "stream_diagnostic.h"
 #include "video_preview.h"
+#include "favorites.h"
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
@@ -15,6 +16,7 @@ int main(void)
 {
     static IptvitaUi ui = {0};
     iptvita_sources_load(&ui.sources);
+    iptvita_favorites_load();
     SceCtrlData pad = {0};
     unsigned int previous = 0;
     int quit = 0;
@@ -38,6 +40,9 @@ int main(void)
             if(pad.ly > 195) direction |= SCE_CTRL_DOWN;
         }
         unsigned int pressed = pad.buttons & ~previous;
+        /* While a video is playing, left/right must switch only ONCE per
+         * physical press, not repeat every three VBlanks while held. */
+        if(ui.browsing && ui.channel_details)direction=0;
         if(direction != last_direction) hold_frames=0;
         else if(direction) ++hold_frames;
         if(direction && (hold_frames==0 || (hold_frames>15 && hold_frames%3==0)))
@@ -75,6 +80,7 @@ int main(void)
             if(network==2) {
                 iptvita_playlist_load_remote(&ui.playlist,iptvita_network_cache_path(),
                                              iptvita_network_requested_url());
+                iptvita_favorites_rebuild(&ui);
                 iptvita_network_reset();
             } else if(network<0) {
                 ui.playlist.status=network==-3?-5:network==-2?-6:-7;
