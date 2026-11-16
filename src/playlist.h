@@ -9,6 +9,7 @@ typedef struct {
  char name[IPTVITA_CHANNEL_NAME];
  char group[64];
  char *url; /* allocated to actual URL length; released on next load */
+ char *tvg_id; /* optional stable M3U channel identifier, only if present */
 } IptvitaChannel;
 typedef struct {
  int count;
