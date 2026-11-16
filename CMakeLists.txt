@@ -34,6 +34,7 @@ add_executable(IPTVita.elf
   src/ui.c
   src/input.c
   src/sources.c
+  src/favorites.c
   src/keyboard.c
   src/playlist.c
   src/network.c
