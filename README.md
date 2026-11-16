@@ -22,9 +22,6 @@
 
 O **IPTVita**, desenvolvido por **[Yurihbo](https://github.com/Yurihbo)**, é um aplicativo *homebrew* independente para navegar em playlists e assistir a transmissões compatíveis no PS Vita e PS TV. A interface está disponível em português e inglês.
 
-> [!IMPORTANT]
-> **Versão experimental:** os recursos e atalhos descritos abaixo correspondem à **Build #464 (PR #31)**. Seu código está na branch experimental indicada; a branch padrão **main** ainda não contém todas essas melhorias. O aplicativo continua em testes no console. Estar listado numa playlist **não garante** que um stream seja compatível.
-
 <table>
   <tr><th align="left">🇧🇷 PORTUGUÊS — Como começar</th></tr>
   <tr><td>
