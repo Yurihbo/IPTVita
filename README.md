@@ -88,9 +88,9 @@ https://raw.githubusercontent.com/Yurihbo/pluto-tv-playlists/main/output/plutotv
 
 ## 🧰 Compilação / Build from source
 
-Requer [VitaSDK](https://vitasdk.org/) e as dependências do projeto. Para compilar os recursos acima, use a **branch experimental** (não a antiga main).
+Requer [VitaSDK](https://vitasdk.org/) e as dependências do projeto. Para compilar os recursos acima, use a **branch experimental**.
 
-*Requires VitaSDK and project dependencies. To build the features shown above, check out the experimental branch (not the older main branch).*
+*Requires VitaSDK and project dependencies. To build the features shown above, check out the experimental branch.
 
 ~~~bash
 git clone https://github.com/Yurihbo/IPTVita.git
