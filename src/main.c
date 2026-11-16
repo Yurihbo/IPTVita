@@ -87,6 +87,15 @@ int main(void)
                 iptvita_network_reset();
             }
         }
+        if(ui.browsing && ui.channel_details && ui.channel_tune_pending &&
+           iptvita_network_state()!=1) {
+            /* The preceding HTTP worker has finished: safely retune to
+             * the MOST RECENT requested channel without modifying player. */
+            iptvita_network_reset();
+            ui.channel_tune_pending=0;
+            int rc=iptvita_stream_start(&ui,ui.stream_source_url);
+            if(rc<0) {ui.stream_status=rc;ui.stream_stage=rc;}
+        }
         if(ui.browsing && ui.channel_details) {
             /* Vita's screen dim / auto-suspend timers normally treat video
              * playback as idle. Refresh them only while a player is open.
