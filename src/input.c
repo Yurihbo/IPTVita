@@ -133,10 +133,10 @@ static void toggle_channel_favorite(IptvitaUi *ui)
     if(ui->source_index<0 || ui->source_index>=(int)ui->sources.count ||
        ui->playlist.status!=1 || ui->channel_index<0 ||
        ui->channel_index>=ui->playlist.count)return;
-    const char *url=ui->playlist.channels[ui->channel_index].url;
+    const IptvitaChannel *channel=&ui->playlist.channels[ui->channel_index];
     const char *source=ui->sources.items[ui->source_index].url;
-    if(!url || !url[0])return;
-    int result=iptvita_favorites_toggle(source,url);
+    if(!channel->url || !channel->url[0])return;
+    int result=iptvita_favorites_toggle(source,channel);
     ui->favorite_notice=result<0?-1:result?1:2;
     if(result>=0)iptvita_favorites_rebuild(ui);
     ui->channel_hint_until_us=
