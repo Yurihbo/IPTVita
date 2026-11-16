@@ -639,6 +639,35 @@ void iptvita_ui_render(const IptvitaUi *ui)
             label(25,505,ui->stream_paused?
                   tr(ui,"PAUSADO  X CONTINUAR  R1 OCULTAR  O VOLTAR","PAUSED  X RESUME  R1 HIDE  O BACK"):
                   tr(ui,"X PAUSAR  R1 INFO  L1 TELA  O VOLTAR","X PAUSE  R1 INFO  L1 SCREEN  O BACK"),2,p.accent);
+            /* Channel navigation always uses the same controller mappings,
+             * regardless of codec, playlist provider or buffer state. */
+            hint_button(25,518,HINT_LEFT,tr(ui,"ANTERIOR","PREVIOUS"),p);
+            hint_button(201,518,HINT_RIGHT,tr(ui,"PROXIMO","NEXT"),p);
+            hint_button(379,518,HINT_START,tr(ui,"FAVORITAR","FAVORITE"),p);
+            hint_button(656,518,HINT_SELECT,tr(ui,"LISTA FAV.","FAV. LIST"),p);
+        }else {
+            unsigned long long now=(unsigned long long)sceKernelGetProcessTimeWide();
+            if(ui->channel_hint_until_us && now<ui->channel_hint_until_us) {
+                rect(0,470,IPTVITA_WIDTH,74,RGBA8(8,20,33,224));
+                if(ui->channel_index>=0 && ui->channel_index<ui->playlist.count) {
+                    const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
+                    clipped(25,480,ch->name,45,2,p.white);
+                    if(ui->favorite_notice==1)
+                        label(560,480,tr(ui,"ADICIONADO AOS FAVORITOS","ADDED TO FAVORITES"),2,p.accent);
+                    else if(ui->favorite_notice==2)
+                        label(560,480,tr(ui,"REMOVIDO DOS FAVORITOS","REMOVED FROM FAVORITES"),2,p.accent);
+                    else if(ui->favorite_notice<0)
+                        label(560,480,tr(ui,"ERRO AO SALVAR FAVORITO","FAVORITE SAVE ERROR"),2,p.accent);
+                    else if(ui->source_index>=0 && ui->source_index<(int)ui->sources.count &&
+                            ch->url && iptvita_favorites_has(
+                            ui->sources.items[ui->source_index].url,ch->url))
+                        label(760,480,tr(ui,"FAVORITO","FAVORITE"),2,p.accent);
+                }
+                hint_button(25,510,HINT_LEFT,tr(ui,"ANTERIOR","PREVIOUS"),p);
+                hint_button(201,510,HINT_RIGHT,tr(ui,"PROXIMO","NEXT"),p);
+                hint_button(379,510,HINT_START,tr(ui,"FAVORITAR","FAVORITE"),p);
+                hint_button(656,510,HINT_SELECT,tr(ui,"LISTA FAV.","FAV. LIST"),p);
+            }
         }
         return;
     }
