@@ -105,4 +105,9 @@ vita_create_vpk(IPTVita.vpk ${VITA_TITLEID} IPTVita.self
   NAME ${VITA_APP_NAME}
   FILE LICENSE LICENSE.txt
   FILE assets/cacert.pem cacert.pem
+  FILE assets/livearea/icon0.png sce_sys/icon0.png
+  FILE assets/livearea/pic0.png sce_sys/pic0.png
+  FILE assets/livearea/bg0.png sce_sys/livearea/contents/bg0.png
+  FILE assets/livearea/startup.png sce_sys/livearea/contents/startup.png
+  FILE assets/livearea/template.xml sce_sys/livearea/contents/template.xml
 )
