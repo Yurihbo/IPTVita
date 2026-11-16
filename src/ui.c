@@ -602,12 +602,22 @@ void iptvita_ui_render(const IptvitaUi *ui)
             }
         }
         if(ui->stream_info_visible) {
-            rect(0,0,IPTVITA_WIDTH,87,RGBA8(8,20,33,224));
+            /* Keep the original video plane untouched. The R1 overlay
+             * prominently labels the current CHANNEL, not a guessed movie.
+             * Standard M3U usually does not contain current EPG show titles. */
+            rect(0,0,IPTVITA_WIDTH,124,RGBA8(8,20,33,229));
+            rect(0,0,6,124,p.accent);
             const IptvitaChannel *ch=&ui->playlist.channels[ui->channel_index];
-            clipped(25,17,ch->name,55,3,p.white);
+            label(27,11,tr(ui,"ASSISTINDO AGORA  /  CANAL",
+                             "NOW WATCHING  /  CHANNEL"),2,p.accent);
+            clipped(25,36,ch->name,35,5,p.white);
+            if(ch->group[0]) {
+                rect(731,42,205,37,RGBA8(15,52,86,236));
+                clipped(745,51,ch->group,18,2,p.accent);
+            }
             char details[130];
             snprintf(details,sizeof(details),"%dx%d H264 %s VIDEO %u AUDIO %s (PID %d)",ui->stream_video_width,ui->stream_video_height,ui->stream_quality_sd?"SD COMPAT":"HD AUTO",ui->stream_decoded_frames,ui->stream_audio_type==0x0f?"AAC ADTS":ui->stream_audio_type==0x11?"AAC LATM":ui->stream_audio_type==3||ui->stream_audio_type==4?"MPEG":ui->stream_audio_pid<0?"NENHUM":"OUTRO",ui->stream_audio_pid);
-            label(26,56,details,2,p.accent);
+            label(27,99,details,2,p.muted);
             rect(0,445,IPTVITA_WIDTH,99,RGBA8(8,20,33,224));
             IptvitaAudioStats audio=iptvita_audio_stats();
             snprintf(details,sizeof(details),"HTTP %d / HLS %d / VIDEO %d (0x%08X) / AAC %u / AUDIO ERR %d",ui->stream_http,ui->stream_stage,ui->stream_decode_error,(unsigned)ui->stream_decode_error,audio.played,audio.error);
