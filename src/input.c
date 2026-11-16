@@ -116,7 +116,17 @@ static void tune_channel(IptvitaUi *ui,int channel)
     snprintf(ui->stream_source_url,sizeof(ui->stream_source_url),"%s",url);
     ui->channel_hint_until_us=
       (unsigned long long)sceKernelGetProcessTimeWide()+3500000ULL;
-    iptvita_stream_start(ui,ui->stream_source_url);
+    /* When a previous HLS segment is still downloading, let it finish
+     * before reusing online.m3u. Otherwise the new tune can fail as busy
+     * or pick up the old segment's cache file. */
+    if(iptvita_network_state()==1) {
+        ui->channel_tune_pending=1;
+        return;
+    }
+    ui->channel_tune_pending=0;
+    iptvita_network_reset();
+    int rc=iptvita_stream_start(ui,ui->stream_source_url);
+    if(rc<0) {ui->stream_status=rc;ui->stream_stage=rc;}
 }
 static void toggle_channel_favorite(IptvitaUi *ui)
 {
@@ -202,6 +212,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             if(ui->channel_details) {
                 iptvita_stream_stop(ui);
                 ui->channel_details=0;
+                ui->channel_tune_pending=0;
             }else ui->browsing=0;
             return 0;
         }
@@ -225,6 +236,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             if(pressed&SCE_CTRL_SELECT) {
                 iptvita_stream_stop(ui);
                 ui->channel_details=0;
+                ui->channel_tune_pending=0;
                 ui->favorites_only=1;
                 if(ui->favorite_count>0 &&
                    favorite_position(ui,ui->channel_index)<0)
@@ -290,6 +302,7 @@ int iptvita_handle_input(IptvitaUi *ui,unsigned int pressed)
             ui->source_index=ui->list_index;
             ui->channel_index=0;
             ui->channel_details=0;
+            ui->channel_tune_pending=0;
             ui->favorites_only=0;
             ui->favorite_count=0;
             ui->favorite_notice=0;
