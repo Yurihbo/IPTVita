@@ -54,6 +54,14 @@ add_executable(IPTVita.elf
   src/vita_entropy.c
 )
 
+# Keep the new channel browser and favorites support small enough for
+# Vita's strict SCE executable segment layout, without changing the
+# optimization level of H264, AAC, HLS, networking or the video renderer.
+set_source_files_properties(
+  src/ui.c src/input.c src/favorites.c src/playlist.c
+  PROPERTIES COMPILE_OPTIONS "-Os"
+)
+
 target_include_directories(IPTVita.elf PRIVATE src)
 file(GLOB VITA_EXTRA_STUBS
   "$ENV{VITASDK}/arm-vita-eabi/lib/libSceSharedFb*_stub.a"
